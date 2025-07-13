@@ -1,14 +1,14 @@
 # Blood Pressure Tracker
 
-A simple command-line application to track your daily blood pressure readings.
+A simple command-line and web application to track your daily blood pressure readings.
 
 ## Features
 
 - Add daily blood pressure readings (systolic, diastolic, and pulse)
 - View all recorded readings
 - View statistics (average, maximum, and minimum values)
-- Data persistence using JSON and CSV file storage
-- Optional saving to a PostgreSQL database
+- Data persistence using PostgreSQL
+- User-friendly command-line and mobile-friendly web interface
 
 ## Requirements
 
@@ -16,8 +16,11 @@ A simple command-line application to track your daily blood pressure readings.
 - pandas
 - tabulate
 - psycopg2-binary (for PostgreSQL support)
+- Flask
 
 ## Usage
+
+### Command-Line Application
 
 Run the program using Python:
 
@@ -32,11 +35,34 @@ Follow the on-screen menu to:
 4. Toggle PostgreSQL saving (ON/OFF)
 5. Exit the program
 
+### Flask Web Application
+
+The Flask app provides a web interface for adding and viewing blood pressure readings, including a mobile-friendly design.
+
+#### Running with Docker Compose
+
+1. Ensure Docker and Docker Compose are installed.
+2. Update `pgpassword.txt` with your desired database password.
+3. Start the services:
+
+```bash
+docker compose up --build
+```
+
+4. Access the web app at [http://localhost:5000](http://localhost:5000) in your browser or mobile device.
+
+#### Features
+
+- Add new readings via web form
+- View all readings in a table
+- View statistics
+- API endpoints for integration (`/api/readings`, `/api/add`)
+
 ## Data Storage
 
-If PostgreSQL saving is enabled, readings are also saved to the configured database.
+All readings are stored in a PostgreSQL database. The table `blood_pressure` will be created automatically if it does not exist.
 
 ### PostgreSQL Setup
 
-- Edit the `pg_config` dictionary in `blood_pressure_tracker.py` to match your database settings.
-- The table `blood_pressure` will be created automatically if it does not exist.
+- The database is configured via Docker Compose and environment variables.
+- The password is securely provided via Docker secrets (`pgpassword.txt`).
