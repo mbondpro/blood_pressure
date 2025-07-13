@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16
+    container_name: bp_postgres
+    environment:
+      POSTGRES_DB: bp_tracker
+      POSTGRES_USER: postgres
+    secrets:
+      - pgpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  flask:
+    build:
+      context: .
+      dockerfile: Dockerfile.flask
+    container_name: bp_flask_app
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: bp_tracker
+      PGUSER: postgres
+      PGPASSWORD_FILE: /run/secrets/pgpassword
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    secrets:
+      - pgpassword
+
+volumes:
+  pgdata:
+
+secrets:
+  pgpassword:
+    file: pgpassword.txt
