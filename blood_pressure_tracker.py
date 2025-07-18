@@ -1,7 +1,6 @@
-import pandas as pd
 from datetime import datetime
 import psycopg2
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from bp_flask_utils import get_pgpassword
 
@@ -20,7 +19,7 @@ class BloodPressureTracker:
         }
         self._create_pg_table()
 
-    def _load_data(self):
+    def _load_data(self) -> List[Dict[str, Any]]:
         """
         Load readings from the PostgreSQL database.
         Returns:
@@ -41,6 +40,35 @@ class BloodPressureTracker:
             print(f"Error loading from PostgreSQL: {e}")
             return []
 
+    def calculate_stats(self, readings: List[Dict[str, Any]]) -> Dict[str, Dict[str, Optional[float]]]:
+        """
+        Calculate statistics (average, max, min) for systolic, diastolic, and pulse.
+        Args:
+            readings: List of readings as dicts.
+        Returns:
+            Dictionary with stats for each measurement.
+        """
+        def get_values(key):
+            vals = [r[key] for r in readings if r[key] is not None]
+            return vals
+
+        stats = {}
+        for key in ['systolic', 'diastolic', 'pulse']:
+            values = get_values(key)
+            if values:
+                stats[key.capitalize()] = {
+                    'Average': sum(values) / len(values),
+                    'Max': max(values),
+                    'Min': min(values)
+                }
+            else:
+                stats[key.capitalize()] = {
+                    'Average': None,
+                    'Max': None,
+                    'Min': None
+                }
+        return stats
+
     def _create_pg_table(self):
         """
         Create the blood_pressure table in PostgreSQL if it does not exist.
@@ -48,59 +76,55 @@ class BloodPressureTracker:
         try:
             conn = psycopg2.connect(**self.pg_config)
             cur = conn.cursor()
-            cur.execute('''
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS blood_pressure (
                     id SERIAL PRIMARY KEY,
                     date TIMESTAMP,
-                    systolic INTEGER,
-                    diastolic INTEGER,
-                    pulse INTEGER NULL
+                    systolic INTEGER NOT NULL,
+                    diastolic INTEGER NOT NULL,
+                    pulse INTEGER
                 )
-            ''')
+            """)
             conn.commit()
             cur.close()
             conn.close()
         except Exception as e:
-            print(f"Error creating table: {e}")
+            print(f"Error creating table in PostgreSQL: {e}")
 
-    def _save_to_postgres(self, reading: dict):
+    def add_reading(self, systolic: int, diastolic: int, pulse: Optional[int], date: Optional[str]):
         """
-        Save a single reading to the PostgreSQL database.
-        Args:
-            reading (dict): A dictionary with keys 'date', 'systolic', 'diastolic', 'pulse'.
+        Add a new reading to the PostgreSQL database.
         """
         try:
             conn = psycopg2.connect(**self.pg_config)
             cur = conn.cursor()
+
+            datetime_format = "%Y-%m-%d %H:%M:%S"
+            date_format = "%Y-%m-%d"
+            dt_formats = [datetime_format, date_format]
+            date_str = ''
+            if date:
+                for fmt in dt_formats:
+                    try:
+                        # Try to parse and reformat date string
+                        dt = datetime.strptime(date, fmt)
+                        date_str = dt.strftime(fmt)
+                        break
+                    except ValueError:
+                        continue
+            if not date_str:
+                # If parsing fails or no date, fall back to now
+                date_str = datetime.now().strftime(datetime_format)
+
             cur.execute(
                 "INSERT INTO blood_pressure (date, systolic, diastolic, pulse) VALUES (%s, %s, %s, %s)",
-                (reading['date'], reading['systolic'], reading['diastolic'], reading.get('pulse', None))
+                (date_str, systolic, diastolic, pulse)
             )
             conn.commit()
             cur.close()
             conn.close()
         except Exception as e:
-            print(f"Error saving to PostgreSQL: {e}")
-
-    def add_reading(self, systolic: int, diastolic: int, pulse: Optional[int] = None, date: Optional[str] = None):
-        """
-        Add a new reading and save to PostgreSQL.
-        Args:
-            systolic (int): Systolic blood pressure value.
-            diastolic (int): Diastolic blood pressure value.
-            pulse (int, optional): Pulse rate value.
-            date (str, optional): Date/time string for the reading. Defaults to current date/time.
-        """
-        if date is None:
-            date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        reading = {
-            'date': date,
-            'systolic': systolic,
-            'diastolic': diastolic
-        }
-        if pulse is not None:
-            reading['pulse'] = pulse
-        self._save_to_postgres(reading)
+            print(f"Error adding reading to PostgreSQL: {e}")
 
     def view_readings(self):
         """
@@ -110,9 +134,17 @@ class BloodPressureTracker:
         if not readings:
             print("\nNo readings found.")
             return
-        df = pd.DataFrame(readings)
         print("\nYour Blood Pressure Readings:")
-        print(df.to_string(index=False))
+        header = ["Date", "Systolic", "Diastolic", "Pulse"]
+        print("{:<20} {:<10} {:<10} {:<10}".format(*header))
+        print("-" * 54)
+        for r in readings:
+            print("{:<20} {:<10} {:<10} {:<10}".format(
+                r['date'],
+                r['systolic'],
+                r['diastolic'],
+                r['pulse'] if r['pulse'] is not None else ""
+            ))
 
     def get_statistics(self):
         """
@@ -122,29 +154,31 @@ class BloodPressureTracker:
         if not readings:
             print("\nNo readings available for statistics.")
             return
-        df = pd.DataFrame(readings)
-        stats = {
-            'Systolic': {
-                'Average': df['systolic'].mean(),
-                'Max': df['systolic'].max(),
-                'Min': df['systolic'].min()
-            },
-            'Diastolic': {
-                'Average': df['diastolic'].mean(),
-                'Max': df['diastolic'].max(),
-                'Min': df['diastolic'].min()
-            },
-            'Pulse': {
-                'Average': df['pulse'].mean(),
-                'Max': df['pulse'].max(),
-                'Min': df['pulse'].min()
-            }
-        }
+        def get_values(key):
+            return [r[key] for r in readings if r[key] is not None]
+        stats = {}
+        for key in ['systolic', 'diastolic', 'pulse']:
+            values = get_values(key)
+            if values:
+                stats[key.capitalize()] = {
+                    'Average': sum(values) / len(values),
+                    'Max': max(values),
+                    'Min': min(values)
+                }
+            else:
+                stats[key.capitalize()] = {
+                    'Average': None,
+                    'Max': None,
+                    'Min': None
+                }
         print("\nStatistics:")
         for measure, values in stats.items():
             print(f"\n{measure}:")
             for stat, value in values.items():
-                print(f"{stat}: {value:.1f}")
+                if value is not None:
+                    print(f"{stat}: {value:.1f}")
+                else:
+                    print(f"{stat}: N/A")
 
 def main_menu(tracker):
     while True:

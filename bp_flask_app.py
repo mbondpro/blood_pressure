@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for
-import pandas as pd
 from blood_pressure_tracker import BloodPressureTracker
-from bp_flask_utils import HTML_FORM, HTML_TABLE, HTML_STATS, get_pgpassword
+from bp_flask_utils import HTML_FORM, HTML_TABLE, HTML_STATS
 
 
 app = Flask(__name__)
@@ -43,24 +42,7 @@ def stats():
     readings = tracker._load_data()
     if not readings:
         return "No readings available for statistics.", 400
-    df = pd.DataFrame(readings)
-    stats = {
-        'Systolic': {
-            'Average': df['systolic'].mean(),
-            'Max': df['systolic'].max(),
-            'Min': df['systolic'].min()
-        },
-        'Diastolic': {
-            'Average': df['diastolic'].mean(),
-            'Max': df['diastolic'].max(),
-            'Min': df['diastolic'].min()
-        },
-        'Pulse': {
-            'Average': df['pulse'].mean(),
-            'Max': df['pulse'].max(),
-            'Min': df['pulse'].min()
-        }
-    }
+    stats = tracker.calculate_stats(readings)
     return render_template_string(HTML_STATS, stats=stats)
 
 @app.route('/api/readings')
