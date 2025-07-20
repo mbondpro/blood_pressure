@@ -2,5 +2,6 @@
 .venv
 .github
 __pycache__
+deploy/
 
 pgpassword.txt

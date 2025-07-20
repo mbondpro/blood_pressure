@@ -1,5 +1,6 @@
 from datetime import datetime
 import psycopg2
+import csv
 from typing import Optional, Dict, Any, List
 
 from bp_flask_utils import get_pgpassword
@@ -18,6 +19,7 @@ class BloodPressureTracker:
             'password': get_pgpassword()  # Function to retrieve the password from a secure source
         }
         self._create_pg_table()
+
 
     def _load_data(self) -> List[Dict[str, Any]]:
         """
@@ -39,6 +41,34 @@ class BloodPressureTracker:
         except Exception as e:
             print(f"Error loading from PostgreSQL: {e}")
             return []
+
+    def load_csv(self, csv_path: str):
+        """
+        Load readings from a CSV file with format 'date, systolic/diastolic'.
+        Date format: mm/dd/yy
+        Example row: 07/20/25, 120/80
+        """
+        count = 0
+        with open(csv_path, 'r', newline='') as csvfile:
+            reader = csv.reader(csvfile)
+            for row in reader:
+                if not row or len(row) < 2:
+                    continue
+                date_str = row[0].strip()
+                bp = row[1].strip()
+                if '/' not in bp:
+                    continue
+                try:
+                    systolic, diastolic = map(int, bp.split('/'))
+                    # Convert mm/dd/yy to yyyy-mm-dd
+                    dt = datetime.strptime(date_str, "%m/%d/%y")
+                    date_fmt = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    if 0 < systolic < 300 and 0 < diastolic < 200:
+                        self.add_reading(systolic, diastolic, None, date_fmt)
+                        count += 1
+                except Exception as e:
+                    print(f"Skipping row due to error: {row} ({e})")
+        print(f"Loaded {count} readings from {csv_path}.")
 
     def calculate_stats(self, readings: List[Dict[str, Any]]) -> Dict[str, Dict[str, Optional[float]]]:
         """
@@ -187,10 +217,11 @@ def main_menu(tracker):
         print("2. View all readings")
         print("3. View statistics")
         print("4. Toggle PostgreSQL saving (currently: {} )".format('ON' if tracker.pg_enabled else 'OFF'))
-        print("5. Exit")
-        
-        choice = input("\nEnter your choice (1-5): ")
-        
+        print("5. Load readings from CSV file")
+        print("6. Exit")
+
+        choice = input("\nEnter your choice (1-6): ")
+
         if choice == '1':
             try:
                 systolic = int(input("Enter systolic pressure (top number): "))
@@ -220,9 +251,11 @@ def main_menu(tracker):
         elif choice == '4':
             tracker.enable_postgres(not tracker.pg_enabled)
         elif choice == '5':
+            path = input("Enter path to CSV file: ").strip()
+            tracker.load_csv(path)
+        elif choice == '6':
             print("Thank you for using Blood Pressure Tracker!")
             break
-            
         else:
             print("Invalid choice. Please try again.")
 
