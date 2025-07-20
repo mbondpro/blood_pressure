@@ -1,22 +1,28 @@
+
 # Blood Pressure Tracker
 
-A simple command-line and web application to track your daily blood pressure readings.
+A simple command-line and web application to track your daily blood pressure readings. Now supports CSV import, edit/delete in the web UI, and improved code quality/linting.
+
 
 ## Features
 
-- Add daily blood pressure readings (systolic, diastolic, and pulse)
+- Add daily blood pressure readings (systolic, diastolic, and optional pulse)
 - View all recorded readings
 - View statistics (average, maximum, and minimum values)
+- Import readings from CSV (CLI and web)
+- Edit and delete readings in the web interface
 - Data persistence using PostgreSQL
 - User-friendly command-line and mobile-friendly web interface
+- API endpoints for integration (`/api/readings`, `/api/add`)
+- Linting and code quality improvements (pylint)
+
 
 ## Requirements
 
 - Python 3.x
-- pandas
-- tabulate
 - psycopg2-binary (for PostgreSQL support)
 - Flask
+
 
 ## Usage
 
@@ -33,11 +39,13 @@ Follow the on-screen menu to:
 2. View all readings
 3. View statistics
 4. Toggle PostgreSQL saving (ON/OFF)
-5. Exit the program
+5. Import readings from CSV file
+6. Exit the program
+
 
 ### Flask Web Application
 
-The Flask app provides a web interface for adding and viewing blood pressure readings, including a mobile-friendly design.
+The Flask app provides a web interface for adding, editing, deleting, and importing blood pressure readings, including a mobile-friendly design.
 
 #### Running with Docker Compose
 
@@ -53,10 +61,12 @@ docker compose up --build
 
 #### Features
 
-- Add new readings via web form
+- Add, edit, and delete readings via web form
+- Import readings from CSV via web
 - View all readings in a table
 - View statistics
 - API endpoints for integration (`/api/readings`, `/api/add`)
+
 
 ## Data Storage
 
