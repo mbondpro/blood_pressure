@@ -1,6 +1,16 @@
+"""
+bp_flask_utils.py
+
+This module contains HTML templates and utility functions for the Blood Pressure Tracker Flask web application.
+All HTML code for forms, tables, and statistics is stored here to keep the Flask app code clean and maintainable.
+Includes:
+- HTML templates for add, edit, table, statistics, and CSV upload forms
+- Utility function for securely retrieving the PostgreSQL password from Docker secrets or environment variables
+"""
+
 import os
 
-HTML_ADD_FORM = '''
+HTML_ADD_FORM = """
 <!doctype html>
 <html lang="en">
 <head>
@@ -31,10 +41,10 @@ HTML_ADD_FORM = '''
 </form>
 </body>
 </html>
-'''
+"""
 
 
-HTML_EDIT_FORM = '''
+HTML_EDIT_FORM = """
 <!doctype html>
 <html lang="en">
 <head>
@@ -61,10 +71,10 @@ HTML_EDIT_FORM = '''
 </form>
 </body>
 </html>
-'''
+"""
 
 
-HTML_CSV_FORM = '''
+HTML_CSV_FORM = """
 <!doctype html>
 <html lang="en">
 <head>
@@ -97,10 +107,10 @@ HTML_CSV_FORM = '''
 {% endwith %}
 </body>
 </html>
-'''
+"""
 
 
-HTML_TABLE = '''
+HTML_TABLE = """
 <!doctype html>
 <html lang="en">
 <head>
@@ -130,9 +140,9 @@ HTML_TABLE = '''
 </table>
 </body>
 </html>
-'''
+"""
 
-HTML_STATS = '''
+HTML_STATS = """
 <!doctype html>
 <html lang="en">
 <head>
@@ -162,11 +172,17 @@ HTML_STATS = '''
 </table>
 </body>
 </html>
-'''
+"""
+
 
 def get_pgpassword():
-    pgpassword_file = os.environ.get('PGPASSWORD_FILE')
+    """
+    Retrieve the PostgreSQL password from a Docker secret file or environment variable.
+    Returns:
+        str or None: The password string if found, else None.
+    """
+    pgpassword_file = os.environ.get("PGPASSWORD_FILE")
     if pgpassword_file and os.path.exists(pgpassword_file):
-        with open(pgpassword_file) as f:
+        with open(pgpassword_file, encoding="utf-8") as f:
             return f.read().strip()
-    return os.environ.get('PGPASSWORD')
+    return os.environ.get("PGPASSWORD")
