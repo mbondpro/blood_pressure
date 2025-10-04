@@ -59,7 +59,8 @@ class BloodPressureTracker:
             conn = psycopg2.connect(**self.pg_config)
             cur = conn.cursor()
             cur.execute(
-                "SELECT date, systolic, diastolic, pulse FROM blood_pressure ORDER BY date DESC"
+                "SELECT date AT TIME ZONE 'America/New_York' as date, systolic, diastolic, pulse "
+                "FROM blood_pressure ORDER BY date DESC"
             )
             rows = cur.fetchall()
             cur.close()
