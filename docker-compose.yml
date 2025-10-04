@@ -6,6 +6,7 @@ services:
       POSTGRES_DB: bp_tracker
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/pgpassword
+      TZ: America/New_York
     secrets:
       - pgpassword
     ports:
@@ -30,6 +31,7 @@ services:
       PGDATABASE: bp_tracker
       PGUSER: postgres
       PGPASSWORD_FILE: /run/secrets/pgpassword
+      TZ: America/New_York
     ports:
       - "5000:5000"
     depends_on:

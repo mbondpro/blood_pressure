@@ -41,7 +41,8 @@ def get_reading_by_id(reading_id):
     conn = psycopg2.connect(**tracker.pg_config)
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, date, systolic, diastolic, pulse FROM blood_pressure WHERE id = %s",
+        "SELECT id, date AT TIME ZONE 'America/New_York' as date, systolic, diastolic, pulse "
+        "FROM blood_pressure WHERE id = %s",
         (reading_id,),
     )
     row = cur.fetchone()
