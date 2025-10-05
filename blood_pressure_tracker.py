@@ -145,7 +145,7 @@ class BloodPressureTracker:
                 """
                 CREATE TABLE IF NOT EXISTS blood_pressure (
                     id SERIAL PRIMARY KEY,
-                    date TIMESTAMP,
+                    date TIMESTAMPZ,
                     systolic INTEGER NOT NULL,
                     diastolic INTEGER NOT NULL,
                     pulse INTEGER
