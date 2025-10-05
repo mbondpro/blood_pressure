@@ -133,9 +133,21 @@ HTML_TABLE = """
 <h2>Blood Pressure Readings</h2>
 <a href="/add">Add New Reading</a> | <a href="/stats">View Statistics</a> | <a href="/load_csv">Load CSV Readings</a>
 <table>
-<tr><th>Date</th><th>Systolic</th><th>Diastolic</th><th>Pulse</th></tr>
+<tr><th>Date</th><th>Systolic</th><th>Diastolic</th><th>Pulse</th><th>Actions</th></tr>
 {% for r in readings %}
-<tr><td>{{ r['date'] }}</td><td>{{ r['systolic'] }}</td><td>{{ r['diastolic'] }}</td><td>{{ r['pulse'] if r['pulse'] is not none else '' }}</td></tr>
+<tr>
+  <td>{{ r['date'] }}</td>
+  <td>{{ r['systolic'] }}</td>
+  <td>{{ r['diastolic'] }}</td>
+  <td>{{ r['pulse'] if r['pulse'] is not none else '' }}</td>
+  <td>
+    <a href="{{ url_for('edit_reading', reading_id=r['id']) }}">Edit</a>
+    |
+    <form method="post" action="{{ url_for('delete_reading', reading_id=r['id']) }}" style="display:inline; margin:0; padding:0;" onsubmit="return confirm('Are you sure you want to delete this reading?');">
+      <button type="submit" style="background:none; border:none; padding:0; color:#007bff; cursor:pointer; text-decoration:underline; font: inherit;">Delete</button>
+    </form>
+  </td>  
+</tr>
 {% endfor %}
 </table>
 </body>

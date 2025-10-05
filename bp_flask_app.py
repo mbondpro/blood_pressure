@@ -94,9 +94,9 @@ def edit_reading(reading_id):
     return render_template_string(HTML_EDIT_FORM, reading=reading)
 
 
-@app.route("/delete/<int:reading_id>", methods=["GET"])
+@app.route("/delete/<int:reading_id>", methods=["POST"])
 def delete_reading(reading_id):
-    """Delete a blood pressure reading by its ID."""
+    """Delete a blood pressure reading by its ID. Accepts POST only for safety."""
     conn = psycopg2.connect(**tracker.pg_config)
     cur = conn.cursor()
     cur.execute("DELETE FROM blood_pressure WHERE id = %s", (reading_id,))
@@ -104,6 +104,12 @@ def delete_reading(reading_id):
     cur.close()
     conn.close()
     return redirect(url_for("index"))
+
+
+@app.route("/delete/<int:reading_id>", methods=["GET"])
+def delete_reading_get(reading_id):
+    """Return 405 for GET requests to the delete endpoint to discourage accidental deletes."""
+    return ("Method Not Allowed", 405)
 
 
 @app.route("/load_csv", methods=["GET", "POST"])
