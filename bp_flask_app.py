@@ -7,9 +7,11 @@ Uses BloodPressureTracker for data management and bp_flask_utils for HTML templa
 """
 
 import os
+import io
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 import csv
+import base64
 import psycopg2
 from flask import (
     Flask,
@@ -20,6 +22,9 @@ from flask import (
     url_for,
     flash,
 )
+import matplotlib
+import matplotlib.pyplot as plt
+
 from blood_pressure_tracker import BloodPressureTracker
 from bp_flask_utils import (
     HTML_ADD_FORM,
@@ -28,12 +33,8 @@ from bp_flask_utils import (
     HTML_CSV_FORM,
     HTML_EDIT_FORM,
 )
-import base64
-from datetime import timedelta
-import io
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+
+matplotlib.use("Agg")
 
 # Initialize Flask app and tracker before any route definitions
 app = Flask(__name__)
@@ -208,12 +209,12 @@ def stats():
     parsed = []
     for r in readings:
         try:
-            dt = datetime.strptime(r['date'], "%Y-%m-%d %H:%M:%S")
+            dt = datetime.strptime(r["date"], "%Y-%m-%d %H:%M:%S")
         except ValueError:
             # try date-only
-            dt = datetime.strptime(r['date'], "%Y-%m-%d")
-        parsed.append({**r, 'date_dt': dt})
-    parsed.sort(key=lambda x: x['date_dt'])
+            dt = datetime.strptime(r["date"], "%Y-%m-%d")
+        parsed.append({**r, "date_dt": dt})
+    parsed.sort(key=lambda x: x["date_dt"])
 
     # Calculate averages over past 7,14,30,90 days
     now = datetime.now()
@@ -221,43 +222,45 @@ def stats():
     averages = {}
     for days in periods:
         since = now - timedelta(days=days)
-        subset = [p for p in parsed if p['date_dt'] >= since]
+        subset = [p for p in parsed if p["date_dt"] >= since]
         if subset:
-            s_vals = [p['systolic'] for p in subset if p['systolic'] is not None]
-            d_vals = [p['diastolic'] for p in subset if p['diastolic'] is not None]
-            averages[f'Last {days} days'] = {
-                'Systolic': round(sum(s_vals)/len(s_vals), 1) if s_vals else None,
-                'Diastolic': round(sum(d_vals)/len(d_vals), 1) if d_vals else None,
+            s_vals = [p["systolic"] for p in subset if p["systolic"] is not None]
+            d_vals = [p["diastolic"] for p in subset if p["diastolic"] is not None]
+            averages[f"Last {days} days"] = {
+                "Systolic": round(sum(s_vals) / len(s_vals), 1) if s_vals else None,
+                "Diastolic": round(sum(d_vals) / len(d_vals), 1) if d_vals else None,
             }
         else:
-            averages[f'Last {days} days'] = {'Systolic': None, 'Diastolic': None}
+            averages[f"Last {days} days"] = {"Systolic": None, "Diastolic": None}
 
     # Also include overall stats for compatibility
     calculated_stats = tracker.calculate_stats(readings)
 
     # Build a plot for systolic and diastolic over time
-    dates = [p['date_dt'] for p in parsed]
-    systolic_vals = [p['systolic'] for p in parsed]
-    diastolic_vals = [p['diastolic'] for p in parsed]
+    dates = [p["date_dt"] for p in parsed]
+    systolic_vals = [p["systolic"] for p in parsed]
+    diastolic_vals = [p["diastolic"] for p in parsed]
 
     plot_data = None
     if dates:
         fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(dates, systolic_vals, label='Systolic', color='#d9534f')
-        ax.plot(dates, diastolic_vals, label='Diastolic', color='#0275d8')
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Pressure (mm Hg)')
-        ax.set_title('Blood Pressure Over Time')
+        ax.plot(dates, systolic_vals, label="Systolic", color="#d9534f")
+        ax.plot(dates, diastolic_vals, label="Diastolic", color="#0275d8")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Pressure (mm Hg)")
+        ax.set_title("Blood Pressure Over Time")
         ax.legend()
         fig.tight_layout()
 
         buf = io.BytesIO()
-        fig.savefig(buf, format='png')
+        fig.savefig(buf, format="png")
         plt.close(fig)
         buf.seek(0)
-        plot_data = base64.b64encode(buf.read()).decode('ascii')
+        plot_data = base64.b64encode(buf.read()).decode("ascii")
 
-    return render_template_string(HTML_STATS, stats=calculated_stats, averages=averages, plot_data=plot_data)
+    return render_template_string(
+        HTML_STATS, stats=calculated_stats, averages=averages, plot_data=plot_data
+    )
 
 
 @app.route("/api/readings")

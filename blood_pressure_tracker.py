@@ -251,9 +251,13 @@ def add_new_reading(tracker):
     try:
         systolic = int(input("Enter systolic pressure (top number): "))
         diastolic = int(input("Enter diastolic pressure (bottom number): "))
-        pulse_input = input("Enter pulse rate (optional, press Enter to skip): ").strip()
+        pulse_input = input(
+            "Enter pulse rate (optional, press Enter to skip): "
+        ).strip()
         pulse = int(pulse_input) if pulse_input else None
-        date = input("Enter date/time (YYYY-MM-DD HH:MM:SS) or leave blank for now: ").strip()
+        date = input(
+            "Enter date/time (YYYY-MM-DD HH:MM:SS) or leave blank for now: "
+        ).strip()
         if not date:
             date = None
         valid = 0 < systolic < 300 and 0 < diastolic < 200
@@ -267,10 +271,12 @@ def add_new_reading(tracker):
     except ValueError:
         print("Please enter valid numbers.")
 
+
 def load_csv_readings(tracker):
     """Prompt user to load readings from a CSV file."""
     path = input("Enter path to CSV file: ").strip()
     tracker.load_csv(path)
+
 
 def main_menu(tracker):
     """
@@ -292,7 +298,9 @@ def main_menu(tracker):
         print("1. Add new reading")
         print("2. View all readings")
         print("3. View statistics")
-        print(f"4. Toggle PostgreSQL saving (currently: {'ON' if tracker.pg_enabled else 'OFF'} )")
+        print(
+            f"4. Toggle PostgreSQL saving (currently: {'ON' if tracker.pg_enabled else 'OFF'} )"
+        )
         print("5. Load readings from CSV file")
         print("6. Exit")
 
@@ -305,6 +313,7 @@ def main_menu(tracker):
             menu_actions[choice]()
         else:
             print("Invalid choice. Please try again.")
+
 
 def main():
     """
