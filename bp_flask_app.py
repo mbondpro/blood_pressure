@@ -30,6 +30,10 @@ from bp_flask_utils import (
 )
 import base64
 from datetime import timedelta
+import io
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 # Initialize Flask app and tracker before any route definitions
 app = Flask(__name__)
@@ -231,7 +235,29 @@ def stats():
     # Also include overall stats for compatibility
     calculated_stats = tracker.calculate_stats(readings)
 
-    return render_template_string(HTML_STATS, stats=calculated_stats, averages=averages)
+    # Build a plot for systolic and diastolic over time
+    dates = [p['date_dt'] for p in parsed]
+    systolic_vals = [p['systolic'] for p in parsed]
+    diastolic_vals = [p['diastolic'] for p in parsed]
+
+    plot_data = None
+    if dates:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(dates, systolic_vals, label='Systolic', color='#d9534f')
+        ax.plot(dates, diastolic_vals, label='Diastolic', color='#0275d8')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Pressure (mm Hg)')
+        ax.set_title('Blood Pressure Over Time')
+        ax.legend()
+        fig.tight_layout()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        plt.close(fig)
+        buf.seek(0)
+        plot_data = base64.b64encode(buf.read()).decode('ascii')
+
+    return render_template_string(HTML_STATS, stats=calculated_stats, averages=averages, plot_data=plot_data)
 
 
 @app.route("/api/readings")

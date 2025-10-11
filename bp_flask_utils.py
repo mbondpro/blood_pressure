@@ -177,6 +177,15 @@ HTML_STATS = """
 <h2>Statistics</h2>
 <p><a href="/">Back to readings</a></p>
 
+<h3>Blood Pressure Over Time</h3>
+{% if plot_data %}
+  <div style="max-width:900px; margin:auto; text-align:center;">
+    <img src="data:image/png;base64,{{ plot_data }}" alt="Blood pressure plot" style="max-width:100%; height:auto; border:1px solid #ddd;"/>
+  </div>
+{% else %}
+  <p>No plot available.</p>
+{% endif %}
+
 <h3>Averages</h3>
 <table style="max-width:600px; margin:auto;">
   <tr><th>Period</th><th>Systolic (avg)</th><th>Diastolic (avg)</th></tr>
