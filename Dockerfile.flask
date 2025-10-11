@@ -2,9 +2,6 @@ FROM python:3.13
 
 WORKDIR /app
 
-COPY bp_flask_app.py ./
-COPY blood_pressure_tracker.py ./
-COPY bp_flask_utils.py ./
 COPY requirements.txt ./
 
 # Install system dependencies for ARM
@@ -12,6 +9,10 @@ RUN apt-get update && apt-get install -y libpq-dev gcc
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+COPY bp_flask_app.py ./
+COPY blood_pressure_tracker.py ./
+COPY bp_flask_utils.py ./
 
 EXPOSE 5000
 
