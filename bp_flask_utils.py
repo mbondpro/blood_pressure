@@ -176,6 +176,25 @@ HTML_STATS = """
 <body>
 <h2>Statistics</h2>
 <p><a href="/">Back to readings</a></p>
+
+<h3>Blood Pressure Over Time</h3>
+{% if plot_data %}
+  <div style="max-width:900px; margin:auto; text-align:center;">
+    <img src="data:image/png;base64,{{ plot_data }}" alt="Blood pressure plot" style="max-width:100%; height:auto; border:1px solid #ddd;"/>
+  </div>
+{% else %}
+  <p>No plot available.</p>
+{% endif %}
+
+<h3>Averages</h3>
+<table style="max-width:600px; margin:auto;">
+  <tr><th>Period</th><th>Systolic (avg)</th><th>Diastolic (avg)</th></tr>
+  {% for period, vals in averages.items() %}
+  <tr><td>{{ period }}</td><td>{{ vals['Systolic'] if vals['Systolic'] is not none else '' }}</td><td>{{ vals['Diastolic'] if vals['Diastolic'] is not none else '' }}</td></tr>
+  {% endfor %}
+</table>
+
+<h3>Overall (All Data)</h3>
 <table>
 <tr><th>Measure</th><th>Average</th><th>Max</th><th>Min</th></tr>
 {% for measure, values in stats.items() %}
