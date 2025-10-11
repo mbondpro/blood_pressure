@@ -28,12 +28,8 @@ from bp_flask_utils import (
     HTML_CSV_FORM,
     HTML_EDIT_FORM,
 )
-import io
 import base64
-import pandas as pd
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+from datetime import timedelta
 
 # Initialize Flask app and tracker before any route definitions
 app = Flask(__name__)
@@ -204,41 +200,30 @@ def stats():
     readings = tracker.get_all_readings()
     if not readings:
         return "No readings available for statistics.", 400
-
-    # Build DataFrame
-    df = pd.DataFrame(readings)
-    # Ensure date column is datetime and sorted
-    df['date'] = pd.to_datetime(df['date'])
-    df = df.sort_values('date')
-
-    # Plot systolic and diastolic over time (no pulse)
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(df['date'], df['systolic'], label='Systolic', color='#d9534f')
-    ax.plot(df['date'], df['diastolic'], label='Diastolic', color='#0275d8')
-    ax.set_xlabel('Date')
-    ax.set_ylabel('Pressure (mm Hg)')
-    ax.set_title('Blood Pressure Over Time')
-    ax.legend()
-    fig.tight_layout()
-
-    # Save plot to PNG in-memory and base64-encode for embedding
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png')
-    plt.close(fig)
-    buf.seek(0)
-    plot_data = base64.b64encode(buf.read()).decode('ascii')
+    # Parse dates and sort readings
+    parsed = []
+    for r in readings:
+        try:
+            dt = datetime.strptime(r['date'], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            # try date-only
+            dt = datetime.strptime(r['date'], "%Y-%m-%d")
+        parsed.append({**r, 'date_dt': dt})
+    parsed.sort(key=lambda x: x['date_dt'])
 
     # Calculate averages over past 7,14,30,90 days
-    now = pd.Timestamp.now()
+    now = datetime.now()
     periods = [7, 14, 30, 90]
     averages = {}
     for days in periods:
-        since = now - pd.Timedelta(days=days)
-        subset = df[df['date'] >= since]
-        if not subset.empty:
+        since = now - timedelta(days=days)
+        subset = [p for p in parsed if p['date_dt'] >= since]
+        if subset:
+            s_vals = [p['systolic'] for p in subset if p['systolic'] is not None]
+            d_vals = [p['diastolic'] for p in subset if p['diastolic'] is not None]
             averages[f'Last {days} days'] = {
-                'Systolic': round(subset['systolic'].mean(), 1),
-                'Diastolic': round(subset['diastolic'].mean(), 1),
+                'Systolic': round(sum(s_vals)/len(s_vals), 1) if s_vals else None,
+                'Diastolic': round(sum(d_vals)/len(d_vals), 1) if d_vals else None,
             }
         else:
             averages[f'Last {days} days'] = {'Systolic': None, 'Diastolic': None}
@@ -246,7 +231,7 @@ def stats():
     # Also include overall stats for compatibility
     calculated_stats = tracker.calculate_stats(readings)
 
-    return render_template_string(HTML_STATS, stats=calculated_stats, plot_data=plot_data, averages=averages)
+    return render_template_string(HTML_STATS, stats=calculated_stats, averages=averages)
 
 
 @app.route("/api/readings")
