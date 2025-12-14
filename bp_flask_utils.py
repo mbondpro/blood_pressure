@@ -8,7 +8,7 @@ Includes:
 - Utility function for securely retrieving the PostgreSQL password from Docker secrets or environment variables
 """
 
-import os
+# os import removed; prefer reading PGPASSWORD from environment where needed
 
 HTML_ADD_FORM = """
 <!doctype html>
@@ -19,10 +19,13 @@ HTML_ADD_FORM = """
   <style>
     body { font-family: Arial, sans-serif; margin: 10px; }
     form { max-width: 400px; margin: auto; padding: 16px; background: #f9f9f9; border-radius: 8px; }
-    input[type=number], input[type=text] { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; }
-    input[type=submit] { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 16px; }
+    input[type=number], input[type=text], input[type=file] { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; }
+    input[type=submit] { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 16px; margin-top: 8px; }
     h2 { text-align: center; }
+    h3 { text-align: center; margin-top: 24px; color: #555; }
+    .divider { text-align: center; margin: 20px 0; color: #999; font-weight: bold; }
     a { display: block; text-align: center; margin-top: 16px; color: #007bff; text-decoration: none; }
+    .flash-message { text-align: center; padding: 10px; margin: 10px auto; max-width: 400px; background: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; }
     @media (max-width: 600px) {
       form { padding: 8px; }
       h2 { font-size: 1.2em; }
@@ -32,13 +35,68 @@ HTML_ADD_FORM = """
 <body>
 <h2>Add Blood Pressure Reading</h2>
 <a href="/">Back to readings</a>
-<form method=post action="/add">
-  Systolic: <input type=number name=systolic required><br>
-  Diastolic: <input type=number name=diastolic required><br>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    {% for message in messages %}
+      <div class="flash-message">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method=post action="/add" enctype="multipart/form-data">
+  <h3>Upload Photo of BP Monitor</h3>
+  <label for="bp_image">Blood Pressure Monitor Image:</label>
+  <input type=file name=bp_image id=bp_image accept="image/*" capture="environment"><br>
+  <input type=submit value="Upload and Process Image">
+  
+  <div class="divider">OR</div>
+  
+  <h3>Enter Manually</h3>
+  Systolic: <input type=number name=systolic><br>
+  Diastolic: <input type=number name=diastolic><br>
   Pulse (optional): <input type=number name=pulse><br>
   Date (YYYY-MM-DD HH:MM:SS, optional): <input type=text name=date><br>
-  <input type=submit value=Add>
+  <input type=submit value="Add Manually">
 </form>
+</body>
+</html>
+"""
+
+
+HTML_PREVIEW_FORM = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preview Extracted Reading</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 10px; }
+    .container { max-width: 600px; margin: auto; padding: 16px; background: #f9f9f9; border-radius: 8px; }
+    input[type=number], input[type=text] { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; }
+    input[type=submit], button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 16px; margin-top: 8px; }
+    img { display:block; margin: 8px auto; max-width:100%; height:auto; border:1px solid #ddd; }
+    .row { display:flex; gap:8px; }
+    .col { flex:1 }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h2>Preview Extracted Reading</h2>
+  <p>Confirm or edit the extracted values before saving.</p>
+  <div style="text-align:center;"><img src="data:image/jpeg;base64,{{ image_data }}" alt="Uploaded image"/></div>
+  <form method=post action="/add/confirm">
+    Systolic: <input type=number name=systolic value="{{ systolic }}" required><br>
+    Diastolic: <input type=number name=diastolic value="{{ diastolic }}" required><br>
+    Pulse (optional): <input type=number name=pulse value="{{ pulse if pulse is not none else '' }}"><br>
+    Date (YYYY-MM-DD HH:MM:SS, optional): <input type=text name=date value="{{ date if date is not none else '' }}"><br>
+    <input type=hidden name="_preview" value="1">
+    <input type=submit value="Save Reading">
+  </form>
+  <form method=get action="/add">
+    <button type="submit" style="background:#6c757d;">Cancel</button>
+  </form>
+</div>
 </body>
 </html>
 """
@@ -63,10 +121,10 @@ HTML_EDIT_FORM = """
 <h2>Edit Blood Pressure Reading</h2>
 <a href="/">Back to readings</a>
 <form method=post>
-  Date: <input type=text name=date value="{{ reading['date'] }}" required><br>
   Systolic: <input type=number name=systolic value="{{ reading['systolic'] }}" required><br>
   Diastolic: <input type=number name=diastolic value="{{ reading['diastolic'] }}" required><br>
   Pulse (optional): <input type=number name=pulse value="{{ reading['pulse'] if reading['pulse'] is not none else '' }}"><br>
+  Date: <input type=text name=date value="{{ reading['date'] }}" required><br>
   <input type=submit value="Save Changes">
 </form>
 </body>
@@ -132,6 +190,16 @@ HTML_TABLE = """
 <body>
 <h2>Blood Pressure Readings</h2>
 <a href="/add">Add New Reading</a> | <a href="/stats">View Statistics</a> | <a href="/load_csv">Load CSV Readings</a>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <div style="max-width:900px; margin:10px auto; text-align:center;">
+      {% for message in messages %}
+        <div style="background:#d4edda; color:#155724; border:1px solid #c3e6cb; padding:8px; margin-bottom:6px; border-radius:4px;">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
 <table>
 <tr><th>Date</th><th>Systolic</th><th>Diastolic</th><th>Pulse</th><th>Actions</th></tr>
 {% for r in readings %}
@@ -204,16 +272,3 @@ HTML_STATS = """
 </body>
 </html>
 """
-
-
-def get_pgpassword():
-    """
-    Retrieve the PostgreSQL password from a Docker secret file or environment variable.
-    Returns:
-        str or None: The password string if found, else None.
-    """
-    pgpassword_file = os.environ.get("PGPASSWORD_FILE")
-    if pgpassword_file and os.path.exists(pgpassword_file):
-        with open(pgpassword_file, encoding="utf-8") as f:
-            return f.read().strip()
-    return os.environ.get("PGPASSWORD")

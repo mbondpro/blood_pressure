@@ -19,9 +19,21 @@ A simple command-line and web application to track your daily blood pressure rea
 
 ## Requirements
 
-- Python 3.x
-- psycopg2-binary (for PostgreSQL support)
-- Flask
+- **Python:** 3.11+ (3.8+ may work, but newer is recommended)
+- **Web framework:** Flask
+- **Database driver:** psycopg2-binary (or psycopg2)
+- **Image processing:** Pillow
+- **Configuration:** python-dotenv (for loading a local `.env` during development)
+- **Plotting:** matplotlib
+- **AI client (optional):** anthropic — required only if using the `ClaudeProcessor` image parsing flow
+- **Testing (dev):** pytest
+- **Timezone data (recommended):** tzdata — some OS Python builds require tzdata for full zoneinfo support; alternatively tests include lightweight fallbacks
+
+Install runtime requirements with:
+
+```bash
+pip install -r requirements.txt
+```
 
 
 ## Usage
@@ -50,7 +62,7 @@ The Flask app provides a web interface for adding, editing, deleting, and import
 #### Running with Docker Compose
 
 1. Ensure Docker and Docker Compose are installed.
-2. Update `pgpassword.txt` with your desired database password.
+2. Add your database password to the `.env` file as `PGPASSWORD` (example included).
 3. Start the services:
 
 ```bash
@@ -75,4 +87,23 @@ All readings are stored in a PostgreSQL database. The table `blood_pressure` wil
 ### PostgreSQL Setup
 
 - The database is configured via Docker Compose and environment variables.
-- The password is securely provided via Docker secrets (`pgpassword.txt`).
+- The password is provided via the `.env` file using the `PGPASSWORD` variable. The compose files read `.env` (or you can export `PGPASSWORD` in your shell).
+
+## Design & Implementation
+
+- **Timezone handling:** All datetimes are stored in the database as UTC-aware timestamps. The application exposes a site timezone configured via the `TIMEZONE` environment variable (default: `America/New_York`). Helper functions parse naive user input as the site timezone and convert to UTC before persisting.
+- **Image upload & AI-assisted extraction:** The web UI accepts photos of blood-pressure monitor screens. EXIF datetime extraction is attempted and an optional AI-assisted extractor (`ClaudeProcessor`) parses systolic, diastolic, pulse, and a best-guess timestamp. The extraction is shown on a preview page for user confirmation prior to saving.
+- **Storage & schema:** Readings are persisted to PostgreSQL in a `blood_pressure` table using a timestamptz-compatible column. The code uses `psycopg2` and passes tz-aware `datetime` objects to the DB.
+- **Configuration & secrets:** Runtime configuration is read from environment variables (loaded via `python-dotenv` in development). Do not commit real secrets — set `ANTHROPIC_API_KEY`, `PGPASSWORD`, and other keys via your environment or a local `.env` file. Compose files read `PGPASSWORD` from `.env`.
+- **Logging & quality:** The project uses structured `logging` (no ad-hoc prints) and follows linting rules (`pylint`) to maintain code quality.
+- **Testing:** Unit tests use `pytest`. `tests/test_timezones.py` verifies timezone parsing/storage/display behavior and uses lightweight monkeypatches for `psycopg2` and `zoneinfo` where appropriate.
+- **Deployment:** Docker Compose (`docker-compose.yml`, `docker-compose-dev.yml`) is configured to use an `.env` file and environment variables for secrets and configuration.
+
+Developer notes:
+
+- Run tests:
+
+```bash
+source .venv/Scripts/activate
+pytest
+```

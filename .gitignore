@@ -1,7 +1,6 @@
 .vscode
 .venv
+.env
 .github
 __pycache__
 deploy/
-
-pgpassword.txt

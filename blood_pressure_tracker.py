@@ -13,11 +13,21 @@ Implements the BloodPressureTracker class for managing blood pressure readings, 
 
 
 import csv
+import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Optional, Dict, Any, List
+import logging
 import psycopg2
+from dotenv import load_dotenv
 
-from bp_flask_utils import get_pgpassword
+logger = logging.getLogger(__name__)
+
+# Load environment variables from .env when running CLI
+load_dotenv()
+
+# Site timezone for display/parsing when a timezone is not provided
+SITE_TZ = os.environ.get("TIMEZONE", "America/New_York")
 
 
 class BloodPressureTracker:
@@ -45,7 +55,7 @@ class BloodPressureTracker:
             "port": 5432,
             "database": "bp_tracker",
             "user": "postgres",
-            "password": get_pgpassword(),  # Function to retrieve the password from a secure source
+            "password": os.environ.get("PGPASSWORD"),
         }
         self._create_pg_table()
 
@@ -59,23 +69,36 @@ class BloodPressureTracker:
             conn = psycopg2.connect(**self.pg_config)
             cur = conn.cursor()
             cur.execute(
-                "SELECT date AT TIME ZONE 'America/New_York' as date, systolic, diastolic, pulse "
-                "FROM blood_pressure ORDER BY date DESC"
+                "SELECT date, systolic, diastolic, pulse FROM blood_pressure ORDER BY date DESC"
             )
             rows = cur.fetchall()
             cur.close()
             conn.close()
-            return [
-                {
-                    "date": str(row[0]),
-                    "systolic": row[1],
-                    "diastolic": row[2],
-                    "pulse": row[3] if row[3] is not None else None,
-                }
-                for row in rows
-            ]
+
+            results: List[Dict[str, Any]] = []
+            for row in rows:
+                raw_dt = row[0]
+                if raw_dt is None:
+                    date_str = ""
+                else:
+                    # Ensure we have an aware datetime. If naive, assume UTC.
+                    if raw_dt.tzinfo is None:
+                        raw_dt = raw_dt.replace(tzinfo=ZoneInfo("UTC"))
+                    # Convert to site timezone for display
+                    local_dt = raw_dt.astimezone(ZoneInfo(SITE_TZ))
+                    date_str = local_dt.strftime("%Y-%m-%d %H:%M:%S %z")
+
+                results.append(
+                    {
+                        "date": date_str,
+                        "systolic": row[1],
+                        "diastolic": row[2],
+                        "pulse": row[3] if row[3] is not None else None,
+                    }
+                )
+            return results
         except (psycopg2.Error, KeyError, ValueError) as e:
-            print(f"Error loading from PostgreSQL: {e}")
+            logger.exception("Error loading from PostgreSQL: %s", e)
             return []
 
     def load_csv(self, csv_path: str):
@@ -103,8 +126,8 @@ class BloodPressureTracker:
                         self.add_reading(systolic, diastolic, None, date_fmt)
                         count += 1
                 except (ValueError, IndexError) as e:
-                    print(f"Skipping row due to error: {row} ({e})")
-        print(f"Loaded {count} readings from {csv_path}.")
+                    logger.warning("Skipping row due to error: %s (%s)", row, e)
+        logger.info("Loaded %d readings from %s.", count, csv_path)
 
     def calculate_stats(
         self, readings: List[Dict[str, Any]]
@@ -156,7 +179,7 @@ class BloodPressureTracker:
             cur.close()
             conn.close()
         except psycopg2.Error as e:
-            print(f"Error creating table in PostgreSQL: {e}")
+            logger.exception("Error creating table in PostgreSQL: %s", e)
 
     def add_reading(
         self, systolic: int, diastolic: int, pulse: Optional[int], date: Optional[str]
@@ -168,32 +191,42 @@ class BloodPressureTracker:
             conn = psycopg2.connect(**self.pg_config)
             cur = conn.cursor()
 
-            datetime_format = "%Y-%m-%d %H:%M:%S"
-            date_format = "%Y-%m-%d"
-            dt_formats = [datetime_format, date_format]
-            date_str = ""
+            # Parse provided date (if any) and store as UTC-aware timestamp
+            dt_utc = None
             if date:
-                for fmt in dt_formats:
+                # Try common formats including ISO
+                parse_formats = [
+                    "%Y-%m-%d %H:%M:%S %z",
+                    "%Y-%m-%d %H:%M:%S",
+                    "%Y-%m-%d",
+                    "%m/%d/%y",
+                ]
+                parsed = None
+                for fmt in parse_formats:
                     try:
-                        # Try to parse and reformat date string
-                        dt = datetime.strptime(date, fmt)
-                        date_str = dt.strftime(fmt)
+                        parsed = datetime.strptime(date, fmt)
                         break
                     except ValueError:
                         continue
-            if not date_str:
-                # If parsing fails or no date, fall back to now
-                date_str = datetime.now().strftime(datetime_format)
+
+                if parsed is not None:
+                    # If parsed lacks tzinfo, assume site timezone
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=ZoneInfo(SITE_TZ))
+                    dt_utc = parsed.astimezone(ZoneInfo("UTC"))
+
+            if dt_utc is None:
+                dt_utc = datetime.now(tz=ZoneInfo("UTC"))
 
             cur.execute(
                 "INSERT INTO blood_pressure (date, systolic, diastolic, pulse) VALUES (%s, %s, %s, %s)",
-                (date_str, systolic, diastolic, pulse),
+                (dt_utc, systolic, diastolic, pulse),
             )
             conn.commit()
             cur.close()
             conn.close()
         except psycopg2.Error as e:
-            print(f"Error adding reading to PostgreSQL: {e}")
+            logger.exception("Error adding reading to PostgreSQL: %s", e)
 
     def view_readings(self):
         """
@@ -201,16 +234,19 @@ class BloodPressureTracker:
         """
         readings = self._load_data()
         if not readings:
-            print("\nNo readings found.")
+            logger.info("\nNo readings found.")
             return
-        print("\nYour Blood Pressure Readings:")
+        logger.info("\nYour Blood Pressure Readings:")
         header = ["Date", "Systolic", "Diastolic", "Pulse"]
-        print(f"{header[0]:<20} {header[1]:<10} {header[2]:<10} {header[3]:<10}")
-        print("-" * 54)
+        logger.info("%s %s %s %s", f"{header[0]:<20}", f"{header[1]:<10}", f"{header[2]:<10}", f"{header[3]:<10}")
+        logger.info("%s", "-" * 54)
         for r in readings:
-            print(
-                f"{r['date']:<20} {r['systolic']:<10} {r['diastolic']:<10} {r['pulse']
-                   if r['pulse'] is not None else '':<10}"
+            logger.info(
+                "%s %s %s %s",
+                f"{r['date']:<20}",
+                f"{r['systolic']:<10}",
+                f"{r['diastolic']:<10}",
+                f"{r['pulse'] if r['pulse'] is not None else '':<10}",
             )
 
     def get_statistics(self):
@@ -219,7 +255,7 @@ class BloodPressureTracker:
         """
         readings = self._load_data()
         if not readings:
-            print("\nNo readings available for statistics.")
+            logger.info("\nNo readings available for statistics.")
             return
 
         def get_values(key):
@@ -236,14 +272,14 @@ class BloodPressureTracker:
                 }
             else:
                 stats[key.capitalize()] = {"Average": None, "Max": None, "Min": None}
-        print("\nStatistics:")
+        logger.info("\nStatistics:")
         for measure, values in stats.items():
-            print(f"\n{measure}:")
+            logger.info("\n%s:", measure)
             for stat, value in values.items():
                 if value is not None:
-                    print(f"{stat}: {value:.1f}")
+                    logger.info("%s: %.1f", stat, value)
                 else:
-                    print(f"{stat}: N/A")
+                    logger.info("%s: N/A", stat)
 
 
 def add_new_reading(tracker):
@@ -265,11 +301,11 @@ def add_new_reading(tracker):
             valid = valid and 0 < pulse < 250
         if valid:
             tracker.add_reading(systolic, diastolic, pulse, date)
-            print("Reading added successfully!")
+            logger.info("Reading added successfully!")
         else:
-            print("Invalid values. Please enter realistic measurements.")
+            logger.info("Invalid values. Please enter realistic measurements.")
     except ValueError:
-        print("Please enter valid numbers.")
+        logger.info("Please enter valid numbers.")
 
 
 def load_csv_readings(tracker):
@@ -290,19 +326,20 @@ def main_menu(tracker):
         "3": tracker.get_statistics,
         "4": lambda: tracker.enable_postgres(not tracker.pg_enabled),
         "5": lambda: load_csv_readings(tracker),
-        "6": lambda: print("Thank you for using Blood Pressure Tracker!"),
+        "6": lambda: logger.info("Thank you for using Blood Pressure Tracker!"),
     }
 
     while True:
-        print("\nBlood Pressure Tracker")
-        print("1. Add new reading")
-        print("2. View all readings")
-        print("3. View statistics")
-        print(
-            f"4. Toggle PostgreSQL saving (currently: {'ON' if tracker.pg_enabled else 'OFF'} )"
+        logger.info("\nBlood Pressure Tracker")
+        logger.info("1. Add new reading")
+        logger.info("2. View all readings")
+        logger.info("3. View statistics")
+        logger.info(
+            "4. Toggle PostgreSQL saving (currently: %s )",
+            "ON" if tracker.pg_enabled else "OFF",
         )
-        print("5. Load readings from CSV file")
-        print("6. Exit")
+        logger.info("5. Load readings from CSV file")
+        logger.info("6. Exit")
 
         choice = input("\nEnter your choice (1-6): ")
 
@@ -312,7 +349,7 @@ def main_menu(tracker):
                 break
             menu_actions[choice]()
         else:
-            print("Invalid choice. Please try again.")
+            logger.info("Invalid choice. Please try again.")
 
 
 def main():

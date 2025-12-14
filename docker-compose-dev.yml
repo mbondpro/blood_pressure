@@ -5,9 +5,9 @@ services:
     environment:
       POSTGRES_DB: bp_tracker
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD_FILE: /run/secrets/pgpassword
-    secrets:
-      - pgpassword
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+    env_file:
+      - .env
     ports:
       - "5432:5432"
     volumes:
@@ -29,18 +29,14 @@ services:
       PGPORT: 5432
       PGDATABASE: bp_tracker
       PGUSER: postgres
-      PGPASSWORD_FILE: /run/secrets/pgpassword
+      PGPASSWORD: ${PGPASSWORD}
+    env_file:
+      - .env
     ports:
       - "5000:5000"
     depends_on:
       db:
         condition: service_healthy
-    secrets:
-      - pgpassword
 
 volumes:
   pgdata:
-
-secrets:
-  pgpassword:
-    file: pgpassword.txt

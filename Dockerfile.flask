@@ -13,6 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY bp_flask_app.py ./
 COPY blood_pressure_tracker.py ./
 COPY bp_flask_utils.py ./
+COPY claude_processor.py ./
+COPY .env ./
 
 EXPOSE 5000
 

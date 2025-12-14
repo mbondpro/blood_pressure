@@ -10,6 +10,7 @@ import os
 import io
 import tempfile
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import csv
 import base64
 import psycopg2
@@ -24,23 +25,135 @@ from flask import (
 )
 import matplotlib
 import matplotlib.pyplot as plt
+from PIL import Image
+from PIL.ExifTags import TAGS
+from dotenv import load_dotenv
 
 from blood_pressure_tracker import BloodPressureTracker
+from claude_processor import ClaudeProcessor
 from bp_flask_utils import (
     HTML_ADD_FORM,
     HTML_TABLE,
     HTML_STATS,
     HTML_CSV_FORM,
     HTML_EDIT_FORM,
+    HTML_PREVIEW_FORM,
 )
 
 matplotlib.use("Agg")
+
+# Load environment variables from .env if present
+load_dotenv()
+
+# Site-wide timezone (used for display and parsing when timezone not provided)
+SITE_TZ = os.environ.get("TIMEZONE", "America/New_York")
+
+
+def is_image_file(f) -> bool:
+    """Return True if uploaded file looks like an image (filename or mimetype)."""
+    try:
+        if getattr(f, "filename", None):
+            return True
+        mimetype = getattr(f, "mimetype", "") or ""
+        return mimetype.startswith("image/")
+    except (AttributeError, TypeError):
+        return False
+
+
+def parse_to_utc(date: str | None) -> datetime:
+    """Parse a date string and return a UTC-aware datetime.
+
+    If parsing fails or `date` is None/empty, returns current UTC time.
+    If parsed datetime has no tzinfo, assume `SITE_TZ`.
+    """
+    if not date:
+        return datetime.now(tz=ZoneInfo("UTC"))
+
+    parse_formats = [
+        "%Y-%m-%d %H:%M:%S %z",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+        "%m/%d/%y",
+    ]
+    parsed = None
+    for fmt in parse_formats:
+        try:
+            parsed = datetime.strptime(date, fmt)
+            break
+        except ValueError:
+            continue
+
+    if parsed is None:
+        return datetime.now(tz=ZoneInfo("UTC"))
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo(SITE_TZ))
+    return parsed.astimezone(ZoneInfo("UTC"))
 
 # Initialize Flask app and tracker before any route definitions
 app = Flask(__name__)
 # secret_key is required for Flask session management and flash messages (used for CSV upload feedback)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "bpsecret")
 tracker = BloodPressureTracker()
+claude_processor = ClaudeProcessor()
+
+
+def build_bp_plot(parsed: list) -> str | None:
+    """Build a base64-encoded PNG plot for systolic/diastolic values.
+
+    Args:
+        parsed: List of readings dicts that include a `date_dt` datetime and
+            numeric `systolic` and `diastolic` fields.
+
+    Returns:
+        A base64-encoded PNG data URI fragment (without the data: prefix),
+        or `None` if there is no data to plot.
+    """
+    dates = [p["date_dt"] for p in parsed]
+    if not dates:
+        return None
+
+    systolic_vals = [p["systolic"] for p in parsed]
+    diastolic_vals = [p["diastolic"] for p in parsed]
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(dates, systolic_vals, label="Systolic", color="#d9534f")
+    ax.plot(dates, diastolic_vals, label="Diastolic", color="#0275d8")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Pressure (mm Hg)")
+    ax.set_title("Blood Pressure Over Time")
+    ax.legend()
+    fig.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("ascii")
+
+
+def extract_image_datetime(image_path: str) -> str | None:
+    """Extract datetime from image EXIF data if available.
+
+    Args:
+        image_path: Path to the image file.
+
+    Returns:
+        Datetime string in format 'YYYY-MM-DD HH:MM:SS' or None if not available.
+    """
+    try:
+        image = Image.open(image_path)
+        exif_data = image.getexif()
+        if exif_data:
+            for tag_id, value in exif_data.items():
+                tag = TAGS.get(tag_id, tag_id)
+                if tag in ("DateTime", "DateTimeOriginal"):
+                    # EXIF datetime format is typically "YYYY:MM:DD HH:MM:SS"
+                    dt_str = str(value).replace(":", "-", 2)  # Replace first two colons
+                    return dt_str
+    except (AttributeError, KeyError, OSError):
+        pass
+    return None
 
 
 def get_reading_by_id(reading_id):
@@ -48,17 +161,25 @@ def get_reading_by_id(reading_id):
     conn = psycopg2.connect(**tracker.pg_config)
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, date AT TIME ZONE 'America/New_York' as date, systolic, diastolic, pulse "
-        "FROM blood_pressure WHERE id = %s",
+        "SELECT id, date, systolic, diastolic, pulse FROM blood_pressure WHERE id = %s",
         (reading_id,),
     )
     row = cur.fetchone()
     cur.close()
     conn.close()
     if row:
+        raw_dt = row[1]
+        if raw_dt is None:
+            date_str = ""
+        else:
+            if raw_dt.tzinfo is None:
+                raw_dt = raw_dt.replace(tzinfo=ZoneInfo("UTC"))
+            local_dt = raw_dt.astimezone(ZoneInfo(SITE_TZ))
+            date_str = local_dt.strftime("%Y-%m-%d %H:%M:%S")
+
         return {
             "id": row[0],
-            "date": row[1].strftime("%Y-%m-%d %H:%M:%S"),
+            "date": date_str,
             "systolic": row[2],
             "diastolic": row[3],
             "pulse": row[4],
@@ -85,11 +206,14 @@ def edit_reading(reading_id):
             if pulse is not None:
                 valid = valid and 0 < pulse < 250
             if valid:
+                # Parse provided date and convert to UTC-aware datetime for storage
+                dt_utc = parse_to_utc(date)
+
                 conn = psycopg2.connect(**tracker.pg_config)
                 cur = conn.cursor()
                 cur.execute(
                     "UPDATE blood_pressure SET date=%s, systolic=%s, diastolic=%s, pulse=%s WHERE id=%s",
-                    (date, systolic, diastolic, pulse, reading_id),
+                    (dt_utc, systolic, diastolic, pulse, reading_id),
                 )
                 conn.commit()
                 cur.close()
@@ -114,7 +238,7 @@ def delete_reading(reading_id):
 
 
 @app.route("/delete/<int:reading_id>", methods=["GET"])
-def delete_reading_get(reading_id):
+def delete_reading_get(_reading_id):
     """Return 405 for GET requests to the delete endpoint to discourage accidental deletes."""
     return ("Method Not Allowed", 405)
 
@@ -176,26 +300,80 @@ def index():
 
 
 @app.route("/add", methods=["GET", "POST"])
-def add():
-    """Add a new blood pressure reading."""
+def add():  # pylint: disable=too-many-branches
+    """Add a new blood pressure reading manually or via image upload."""
+    response = None
     if request.method == "POST":
-        try:
-            systolic = int(request.form["systolic"])
-            diastolic = int(request.form["diastolic"])
-            pulse_input = request.form.get("pulse", "").strip()
-            pulse = int(pulse_input) if pulse_input else None
-            date = request.form.get("date", "").strip()
-            if not date:
-                date = None
-            valid = 0 < systolic < 300 and 0 < diastolic < 200
-            if pulse is not None:
-                valid = valid and 0 < pulse < 250
-            if valid:
-                tracker.add_reading(systolic, diastolic, pulse, date)
-                return redirect(url_for("index"))
-            return "Invalid values. Please enter realistic measurements.", 400
-        except (ValueError, psycopg2.Error):
-            return "Please enter valid numbers.", 400
+        # Check if image was uploaded
+        image_file = request.files.get("bp_image")
+
+        if image_file and is_image_file(image_file):
+
+            # Save to temporary file
+            file_ext = os.path.splitext(image_file.filename or "")[1] or ".jpg"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+                tmp_path = tmp.name
+
+            try:
+                image_file.save(tmp_path)
+
+                # Extract data from image using Claude
+                bp_data = claude_processor.process_bp_image(tmp_path)
+
+                systolic = int(bp_data["systolic"])
+                diastolic = int(bp_data["diastolic"])
+                pulse = int(bp_data["pulse"]) if bp_data.get("pulse") else None
+
+                # Try to get timestamp from Claude response, then EXIF, then use current time
+                date = bp_data.get("timestamp")
+                if not date:
+                    date = extract_image_datetime(tmp_path)
+                # Prepare preview: show the image and prefilled values for confirmation
+                try:
+                    with open(tmp_path, "rb") as _f:
+                        image_b64 = base64.b64encode(_f.read()).decode("ascii")
+                except OSError:
+                    image_b64 = ""
+
+                # Render preview page (user can edit values before saving)
+                response = render_template_string(
+                    HTML_PREVIEW_FORM,
+                    image_data=image_b64,
+                    systolic=systolic,
+                    diastolic=diastolic,
+                    pulse=pulse,
+                    date=date,
+                )
+
+            except (ValueError, OSError) as e:
+                flash(f"Error processing image: {str(e)}")
+                response = render_template_string(HTML_ADD_FORM)
+            finally:
+                # Clean up temporary file
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
+        # Manual entry (original code)
+        if response is None:
+            try:
+                systolic = int(request.form["systolic"])
+                diastolic = int(request.form["diastolic"])
+                pulse_input = request.form.get("pulse", "").strip()
+                pulse = int(pulse_input) if pulse_input else None
+                date = request.form.get("date", "").strip()
+                if not date:
+                    date = None
+                valid = 0 < systolic < 300 and 0 < diastolic < 200
+                if pulse is not None:
+                    valid = valid and 0 < pulse < 250
+                if valid:
+                    tracker.add_reading(systolic, diastolic, pulse, date)
+                    return redirect(url_for("index"))
+                return "Invalid values. Please enter realistic measurements.", 400
+            except (ValueError, psycopg2.Error):
+                return "Please enter valid numbers.", 400
+    if response is not None:
+        return response
     return render_template_string(HTML_ADD_FORM)
 
 
@@ -237,26 +415,7 @@ def stats():
     calculated_stats = tracker.calculate_stats(readings)
 
     # Build a plot for systolic and diastolic over time
-    dates = [p["date_dt"] for p in parsed]
-    systolic_vals = [p["systolic"] for p in parsed]
-    diastolic_vals = [p["diastolic"] for p in parsed]
-
-    plot_data = None
-    if dates:
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(dates, systolic_vals, label="Systolic", color="#d9534f")
-        ax.plot(dates, diastolic_vals, label="Diastolic", color="#0275d8")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Pressure (mm Hg)")
-        ax.set_title("Blood Pressure Over Time")
-        ax.legend()
-        fig.tight_layout()
-
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png")
-        plt.close(fig)
-        buf.seek(0)
-        plot_data = base64.b64encode(buf.read()).decode("ascii")
+    plot_data = build_bp_plot(parsed)
 
     return render_template_string(
         HTML_STATS, stats=calculated_stats, averages=averages, plot_data=plot_data
@@ -294,6 +453,32 @@ def api_add():
         return jsonify({"error": "Invalid values"}), 400
     except (ValueError, psycopg2.Error):
         return jsonify({"error": "Invalid input"}), 400
+
+
+@app.route("/add/confirm", methods=["POST"])
+def add_confirm():
+    """Save a reading submitted from the preview form."""
+    try:
+        systolic = int(request.form["systolic"])
+        diastolic = int(request.form["diastolic"])
+        pulse_input = request.form.get("pulse", "").strip()
+        pulse = int(pulse_input) if pulse_input else None
+        date = request.form.get("date", "").strip()
+        if not date:
+            date = None
+
+        valid = 0 < systolic < 300 and 0 < diastolic < 200
+        if pulse is not None:
+            valid = valid and 0 < pulse < 250
+        if valid:
+            tracker.add_reading(systolic, diastolic, pulse, date)
+            flash("Reading saved")
+            return redirect(url_for("index"))
+        flash("Invalid values. Please correct them and try again.")
+        return redirect(url_for("add"))
+    except (ValueError, psycopg2.Error):
+        flash("Please enter valid numbers.")
+        return redirect(url_for("add"))
 
 
 if __name__ == "__main__":
