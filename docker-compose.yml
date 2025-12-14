@@ -20,9 +20,6 @@ services:
 
   flask:
     image: bp-flask-arm64
-    build:
-      context: .
-      dockerfile: Dockerfile.flask
     container_name: bp_flask_app
     environment:
       PGHOST: db
