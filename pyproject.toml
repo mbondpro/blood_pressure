@@ -1,0 +1,8 @@
+[tool.pylint.master]
+ignore = ["venv", ".venv"]
+
+[tool.pylint.messages_control]
+disable = ["import-error"]
+
+[tool.pylint.format]
+max-line-length = 120

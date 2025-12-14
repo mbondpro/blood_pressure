@@ -90,10 +90,17 @@ def parse_to_utc(date: str | None) -> datetime:
         parsed = parsed.replace(tzinfo=ZoneInfo(SITE_TZ))
     return parsed.astimezone(ZoneInfo("UTC"))
 
+
 # Initialize Flask app and tracker before any route definitions
 app = Flask(__name__)
-# secret_key is required for Flask session management and flash messages (used for CSV upload feedback)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "bpsecret")
+# secret_key is required for Flask session management and flash messages
+# Require `FLASK_SECRET_KEY` to be set in the environment (do not use a hardcoded default).
+secret = os.environ.get("FLASK_SECRET_KEY")
+if not secret:
+    raise RuntimeError(
+        "FLASK_SECRET_KEY environment variable is not set. Set it in your environment or .env before starting the app."
+    )
+app.secret_key = secret
 tracker = BloodPressureTracker()
 claude_processor = ClaudeProcessor()
 

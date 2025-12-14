@@ -1,9 +1,19 @@
+"""Unit tests for timezone parsing and DB storage/display conversion.
+
+These tests use dynamic imports and monkeypatching to avoid external
+dependencies during CI/local runs.
+"""
+
 import os
 import importlib.util
 import importlib
 import sys
 from datetime import datetime, timedelta, timezone
 import zoneinfo
+
+# Tests use dynamic imports, monkeypatching, and compact helpers —
+# allow test-specific pylint exceptions here.
+# pylint: disable=missing-module-docstring,missing-class-docstring,missing-function-docstring,too-many-locals,too-few-public-methods,import-outside-toplevel,line-too-long
 
 # deferred imports for claude_processor and blood_pressure_tracker are handled inside tests
 
@@ -66,7 +76,9 @@ def test_parse_to_utc_and_add_reading(monkeypatch):
 
     # Import modules after monkeypatching -- load by path to avoid pytest import issues
     base = os.getcwd()
-    spec_bp = importlib.util.spec_from_file_location("blood_pressure_tracker", os.path.join(base, "blood_pressure_tracker.py"))
+    spec_bp = importlib.util.spec_from_file_location(
+        "blood_pressure_tracker", os.path.join(base, "blood_pressure_tracker.py")
+    )
     bp = importlib.util.module_from_spec(spec_bp)
     spec_bp.loader.exec_module(bp)  # type: ignore
     # Make the module importable by name for modules that import it
@@ -84,12 +96,16 @@ def test_parse_to_utc_and_add_reading(monkeypatch):
     claude_mod.ClaudeProcessor = _DummyClaude
     sys.modules["claude_processor"] = claude_mod
     # Ensure bp_flask_utils is importable for bp_flask_app
-    spec_utils = importlib.util.spec_from_file_location("bp_flask_utils", os.path.join(base, "bp_flask_utils.py"))
+    spec_utils = importlib.util.spec_from_file_location(
+        "bp_flask_utils", os.path.join(base, "bp_flask_utils.py")
+    )
     utils_mod = importlib.util.module_from_spec(spec_utils)
     spec_utils.loader.exec_module(utils_mod)  # type: ignore
     sys.modules["bp_flask_utils"] = utils_mod
 
-    spec_app = importlib.util.spec_from_file_location("bp_flask_app", os.path.join(base, "bp_flask_app.py"))
+    spec_app = importlib.util.spec_from_file_location(
+        "bp_flask_app", os.path.join(base, "bp_flask_app.py")
+    )
     app_mod = importlib.util.module_from_spec(spec_app)
     spec_app.loader.exec_module(app_mod)  # type: ignore
 
@@ -150,6 +166,7 @@ def test_get_reading_by_id_converts_to_site_tz(monkeypatch):
 
         def close(self):
             pass
+
         def commit(self):
             pass
 
@@ -171,12 +188,16 @@ def test_get_reading_by_id_converts_to_site_tz(monkeypatch):
     sys.modules["claude_processor"] = claude_mod
 
     # Ensure bp_flask_utils is importable for bp_flask_app
-    spec_utils = importlib.util.spec_from_file_location("bp_flask_utils", os.path.join(base, "bp_flask_utils.py"))
+    spec_utils = importlib.util.spec_from_file_location(
+        "bp_flask_utils", os.path.join(base, "bp_flask_utils.py")
+    )
     utils_mod = importlib.util.module_from_spec(spec_utils)
     spec_utils.loader.exec_module(utils_mod)  # type: ignore
     sys.modules["bp_flask_utils"] = utils_mod
 
-    spec_app = importlib.util.spec_from_file_location("bp_flask_app", os.path.join(base, "bp_flask_app.py"))
+    spec_app = importlib.util.spec_from_file_location(
+        "bp_flask_app", os.path.join(base, "bp_flask_app.py")
+    )
     app_mod = importlib.util.module_from_spec(spec_app)
     spec_app.loader.exec_module(app_mod)  # type: ignore
 

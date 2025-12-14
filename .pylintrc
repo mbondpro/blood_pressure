@@ -1,8 +1,0 @@
-[MASTER]
-ignore=venv,.venv
-
-[MESSAGES CONTROL]
-disable=import-error
-
-[FORMAT]
-max-line-length=120

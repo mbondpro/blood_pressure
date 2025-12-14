@@ -238,7 +238,13 @@ class BloodPressureTracker:
             return
         logger.info("\nYour Blood Pressure Readings:")
         header = ["Date", "Systolic", "Diastolic", "Pulse"]
-        logger.info("%s %s %s %s", f"{header[0]:<20}", f"{header[1]:<10}", f"{header[2]:<10}", f"{header[3]:<10}")
+        logger.info(
+            "%s %s %s %s",
+            f"{header[0]:<20}",
+            f"{header[1]:<10}",
+            f"{header[2]:<10}",
+            f"{header[3]:<10}",
+        )
         logger.info("%s", "-" * 54)
         for r in readings:
             logger.info(
