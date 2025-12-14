@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 TEMPERATURE = float(os.getenv("CLAUDE_TEMPERATURE", "0.0"))
 THINKING_BUDGET = int(os.getenv("CLAUDE_THINKING_BUDGET", "1024"))
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 
 
 class ClaudeProcessor:

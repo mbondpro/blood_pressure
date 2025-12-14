@@ -390,19 +390,22 @@ def stats():
     readings = tracker.get_all_readings()
     if not readings:
         return "No readings available for statistics.", 400
-    # Parse dates and sort readings
+    # Parse dates into timezone-aware datetimes (site timezone) and sort
     parsed = []
     for r in readings:
+        date_str = r.get("date") or ""
         try:
-            dt = datetime.strptime(r["date"], "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            # try date-only
-            dt = datetime.strptime(r["date"], "%Y-%m-%d")
-        parsed.append({**r, "date_dt": dt})
+            # parse_to_utc handles multiple formats and returns a UTC-aware datetime
+            dt_utc = parse_to_utc(date_str)
+        except Exception:
+            dt_utc = datetime.now(tz=ZoneInfo("UTC"))
+        # convert to site timezone for display/aggregation
+        local_dt = dt_utc.astimezone(ZoneInfo(SITE_TZ))
+        parsed.append({**r, "date_dt": local_dt})
     parsed.sort(key=lambda x: x["date_dt"])
 
-    # Calculate averages over past 7,14,30,90 days
-    now = datetime.now()
+    # Calculate averages over past 7,14,30,90 days (use site-local now)
+    now = datetime.now(tz=ZoneInfo(SITE_TZ))
     periods = [7, 14, 30, 90]
     averages = {}
     for days in periods:
