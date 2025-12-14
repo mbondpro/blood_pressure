@@ -116,6 +116,13 @@ def build_bp_plot(parsed: list) -> str | None:
         A base64-encoded PNG data URI fragment (without the data: prefix),
         or `None` if there is no data to plot.
     """
+    # Filter to only include readings from the past year
+    if parsed and parsed[0].get("date_dt"):
+        # Use timezone from first reading for consistency
+        tz = parsed[0]["date_dt"].tzinfo
+        one_year_ago = datetime.now(tz=tz) - timedelta(days=365)
+        parsed = [p for p in parsed if p["date_dt"] >= one_year_ago]
+    
     dates = [p["date_dt"] for p in parsed]
     if not dates:
         return None
