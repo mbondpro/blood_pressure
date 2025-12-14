@@ -324,8 +324,15 @@ def add():  # pylint: disable=too-many-branches
             try:
                 image_file.save(tmp_path)
 
-                # Extract data from image using Claude
-                bp_data = claude_processor.process_bp_image(tmp_path)
+                # Resize uploaded image before submitting to Claude to reduce upload size
+                try:
+                    resized_tmp = claude_processor.resize_image(tmp_path, max_dim=1000)
+                except Exception:
+                    # fallback to original if resizing fails
+                    resized_tmp = tmp_path
+
+                # Extract data from image using Claude (use resized_tmp)
+                bp_data = claude_processor.process_bp_image(resized_tmp)
 
                 systolic = int(bp_data["systolic"])
                 diastolic = int(bp_data["diastolic"])
@@ -356,9 +363,17 @@ def add():  # pylint: disable=too-many-branches
                 flash(f"Error processing image: {str(e)}")
                 response = render_template_string(HTML_ADD_FORM)
             finally:
-                # Clean up temporary file
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
+                # Clean up temporary files
+                try:
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+                except OSError:
+                    pass
+                try:
+                    if 'resized_tmp' in locals() and resized_tmp != tmp_path and os.path.exists(resized_tmp):
+                        os.unlink(resized_tmp)
+                except OSError:
+                    pass
 
         # Manual entry (original code)
         if response is None:

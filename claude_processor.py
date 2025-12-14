@@ -11,10 +11,13 @@ import os
 import logging
 import base64
 import json
+import tempfile
 from typing import Any, Dict, List
+
 from dotenv import load_dotenv
 from anthropic import Anthropic
 from anthropic.types import Message
+from PIL import Image
 
 load_dotenv()
 
@@ -251,6 +254,13 @@ class ClaudeProcessor:
         if not os.path.exists(image_path):
             raise ValueError(f"Image file does not exist: {image_path}")
 
+        # Resize image if it's larger than allowed dimensions to reduce upload size
+        resized_path = image_path
+        try:
+            resized_path = self.resize_image(image_path, max_dim=1000)
+        except (OSError, ValueError):  # If resizing fails, continue with original image
+            logger.debug("Image resize failed, continuing with original file", exc_info=True)
+
         prompt = """Analyze this image of a blood pressure monitor display.
 Extract the following values and return them in valid JSON format:
 - systolic: the systolic blood pressure (top number)
@@ -261,9 +271,17 @@ Return ONLY valid JSON with these fields. Example:
 {"systolic": 120, "diastolic": 80, "pulse": 72}
 """
 
-        self.add_user_message(self.create_image_message(image_path, prompt))
-        response = self.chat()
-        text_response = self.text_from_message(response)
+        try:
+            self.add_user_message(self.create_image_message(resized_path, prompt))
+            response = self.chat()
+            text_response = self.text_from_message(response)
+        finally:
+            # clean up any temporary resized file
+            try:
+                if resized_path != image_path and os.path.exists(resized_path):
+                    os.unlink(resized_path)
+            except OSError:
+                logger.debug("Failed to remove temporary resized image %s", resized_path, exc_info=True)
 
         # Parse JSON from response
         try:
@@ -285,3 +303,65 @@ Return ONLY valid JSON with these fields. Example:
             return data
         except (json.JSONDecodeError, IndexError, KeyError) as e:
             raise ValueError(f"Failed to parse JSON from response: {e}") from e
+
+    @staticmethod
+    # Tests and usage make this function utility-like; allow a few locals here.
+    # pylint: disable=too-many-locals
+    def resize_image(image_path: str, max_dim: int = 1000) -> str:
+        """Resize an image so its largest dimension is no greater than `max_dim`.
+
+        If the image is already within bounds, returns the original path.
+        Otherwise writes a resized copy to a temporary file and returns its path.
+        """
+        if not os.path.exists(image_path):
+            raise ValueError(f"Image file does not exist: {image_path}")
+
+        try:
+            img = Image.open(image_path)
+        except OSError as exc:
+            raise ValueError(f"Unable to open image: {image_path}") from exc
+
+        width, height = img.size
+        max_current = max(width, height)
+        if max_current <= max_dim:
+            return image_path
+
+        ratio = float(max_dim) / float(max_current)
+        new_size = (int(width * ratio), int(height * ratio))
+
+        # Choose a resampling filter compatible across Pillow versions
+        try:
+            resample = Image.Resampling.LANCZOS
+        except AttributeError:
+            # Use getattr to avoid static attribute checks on PIL versions
+            resample = getattr(Image, "LANCZOS", getattr(Image, "BICUBIC", 3))
+
+        resized = img.resize(new_size, resample)
+
+        ext = os.path.splitext(image_path)[1].lower()
+        fmt = {
+            ".jpg": "JPEG",
+            ".jpeg": "JPEG",
+            ".png": "PNG",
+            ".gif": "GIF",
+        }.get(ext, "JPEG")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp_name = tmp.name
+
+        try:
+            # Save with reasonable quality settings for JPEG
+            save_kwargs: Dict[str, Any] = {"format": fmt}
+            if fmt == "JPEG":
+                save_kwargs["quality"] = 85
+                save_kwargs["optimize"] = True
+            resized.save(tmp_name, **save_kwargs)
+        except OSError:
+            # cleanup on failure
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+
+        return tmp_name
