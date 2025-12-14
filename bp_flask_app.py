@@ -133,6 +133,8 @@ def build_bp_plot(parsed: list) -> str | None:
     fig, ax = plt.subplots(figsize=(8, 4))
     
     # Add colored shaded regions for blood pressure ranges
+    ax.axhspan(0, 80, facecolor='lightgreen', alpha=0.2, zorder=0)
+    ax.axhspan(80, 90, facecolor='yellow', alpha=0.25, zorder=0)
     ax.axhspan(100, 120, facecolor='lightgreen', alpha=0.3, zorder=0)
     ax.axhspan(120, 130, facecolor='yellow', alpha=0.3, zorder=0)
     ax.axhspan(130, 140, facecolor='orange', alpha=0.3, zorder=0)
@@ -149,9 +151,10 @@ def build_bp_plot(parsed: list) -> str | None:
     y_max = max(max(systolic_vals), max(diastolic_vals)) + 10
     y_min = int(y_min // 10) * 10  # Round down to nearest 10
     y_max = int((y_max // 10) + 1) * 10  # Round up to nearest 10
+    y_min = max(y_min, 60)  # Floor y-axis at 60
     y_max = min(y_max, 165)  # Cap y-axis at 165
     ax.set_yticks(range(y_min, y_max + 1, 10))
-    ax.set_ylim(y_min, 165)  # Set y-axis upper limit to 165
+    ax.set_ylim(y_min, 165)  # Set y-axis limits
     ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
     
     ax.legend()
