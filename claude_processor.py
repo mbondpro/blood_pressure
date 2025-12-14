@@ -195,7 +195,9 @@ class ClaudeProcessor:
             return "image/gif"
         raise ValueError(f"Unsupported image extension: {ext}")
 
-    def create_image_message(self, image: str, prompt: str) -> List[Dict[str, Any]]:
+    def create_image_message(
+        self, image: str, prompt: str, use_cache: bool = True
+    ) -> List[Dict[str, Any]]:
         """Build a message block list containing an image and a text prompt.
 
         The image is read from disk, base64-encoded, and returned alongside a
@@ -205,6 +207,9 @@ class ClaudeProcessor:
         Args:
             image: Path to the image file to include.
             prompt: The textual prompt/question associated with the image.
+            use_cache: If True, add cache_control to the image block to enable
+                Anthropic's prompt caching feature (reduces token usage for
+                repeated requests with the same image).
 
         Returns:
             A list of dict blocks representing an image block and a text block.
@@ -219,21 +224,29 @@ class ClaudeProcessor:
         except FileNotFoundError as exc:
             raise ValueError(f"Image file not found: {image}") from exc
 
-        return [
-            # Image Block
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": self.image_type_from_filename(image),
-                    "data": image_bytes,
-                },
+        image_block: Dict[str, Any] = {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": self.image_type_from_filename(image),
+                "data": image_bytes,
             },
+        }
+
+        # Add cache control to enable prompt caching on Anthropic's servers
+        # This significantly reduces token usage when the same image is sent multiple times
+        if use_cache:
+            image_block["cache_control"] = {"type": "ephemeral"}
+
+        return [
+            image_block,
             # Text Block
             {"type": "text", "text": prompt},
         ]
 
-    def process_bp_image(self, image_path: str) -> Dict[str, Any]:
+    def process_bp_image(
+        self, image_path: str, use_cache: bool = True
+    ) -> Dict[str, Any]:
         """Extract blood pressure data from an image of a BP monitor.
 
         Uses Claude's vision API to analyze an image containing blood pressure
@@ -242,6 +255,8 @@ class ClaudeProcessor:
 
         Args:
             image_path: Path to the image file containing BP monitor reading.
+            use_cache: If True, enable Anthropic's prompt caching to reduce
+                token usage for repeated requests with the same image.
 
         Returns:
             Dictionary with keys: 'systolic', 'diastolic', 'pulse', and
@@ -272,7 +287,9 @@ Return ONLY valid JSON with these fields. Example:
 """
 
         try:
-            self.add_user_message(self.create_image_message(resized_path, prompt))
+            self.add_user_message(
+                self.create_image_message(resized_path, prompt, use_cache=use_cache)
+            )
             response = self.chat()
             text_response = self.text_from_message(response)
         finally:
