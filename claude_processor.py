@@ -276,11 +276,12 @@ class ClaudeProcessor:
         except (OSError, ValueError):  # If resizing fails, continue with original image
             logger.debug("Image resize failed, continuing with original file", exc_info=True)
 
-        prompt = """Analyze this image of a blood pressure monitor display.
+        prompt = """Analyze this image of a blood pressure monitor display. 
+        The numbers on the display appear in dark gray on a light gray background.
 Extract the following values and return them in valid JSON format:
-- systolic: the systolic blood pressure (top number)
-- diastolic: the diastolic blood pressure (bottom number)
-- pulse: the heart rate/pulse
+- systolic: the systolic blood pressure (first number)
+- diastolic: the diastolic blood pressure (second number)
+- pulse: the heart rate/pulse (third number)
 
 Return ONLY valid JSON with these fields. Example:
 {"systolic": 120, "diastolic": 80, "pulse": 72}
