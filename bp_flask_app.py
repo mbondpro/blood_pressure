@@ -122,7 +122,7 @@ def build_bp_plot(parsed: list) -> str | None:
         tz = parsed[0]["date_dt"].tzinfo
         one_year_ago = datetime.now(tz=tz) - timedelta(days=365)
         parsed = [p for p in parsed if p["date_dt"] >= one_year_ago]
-    
+
     dates = [p["date_dt"] for p in parsed]
     if not dates:
         return None
@@ -131,7 +131,7 @@ def build_bp_plot(parsed: list) -> str | None:
     diastolic_vals = [p["diastolic"] for p in parsed]
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    
+
     # Add colored shaded regions for blood pressure ranges
     ax.axhspan(0, 80, facecolor='lightgreen', alpha=0.2, zorder=0)
     ax.axhspan(80, 90, facecolor='yellow', alpha=0.25, zorder=0)
@@ -139,16 +139,17 @@ def build_bp_plot(parsed: list) -> str | None:
     ax.axhspan(120, 130, facecolor='yellow', alpha=0.3, zorder=0)
     ax.axhspan(130, 140, facecolor='orange', alpha=0.3, zorder=0)
     ax.axhspan(140, 200, facecolor='lightcoral', alpha=0.3, zorder=0)
-    
+
     ax.plot(dates, systolic_vals, label="Systolic", color="#d9534f", linewidth=2, zorder=2)
     ax.plot(dates, diastolic_vals, label="Diastolic", color="#0275d8", linewidth=2, zorder=2)
     ax.set_xlabel("Date")
     ax.set_ylabel("Pressure (mm Hg)")
     ax.set_title("Blood Pressure Over Time")
-    
+
     # Set y-axis markers every 10 units
-    y_min = min(min(systolic_vals), min(diastolic_vals)) - 10
-    y_max = max(max(systolic_vals), max(diastolic_vals)) + 10
+    all_vals = systolic_vals + diastolic_vals
+    y_min = min(all_vals) - 10
+    y_max = max(all_vals) + 10
     y_min = int(y_min // 10) * 10  # Round down to nearest 10
     y_max = int((y_max // 10) + 1) * 10  # Round up to nearest 10
     y_min = max(y_min, 60)  # Floor y-axis at 60
@@ -156,7 +157,7 @@ def build_bp_plot(parsed: list) -> str | None:
     ax.set_yticks(range(y_min, y_max + 1, 10))
     ax.set_ylim(y_min, 165)  # Set y-axis limits
     ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
-    
+
     ax.legend()
     fig.tight_layout()
 

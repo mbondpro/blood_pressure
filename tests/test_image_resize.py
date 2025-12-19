@@ -1,3 +1,5 @@
+"""Test image resizing functionality for blood pressure monitor images."""
+
 import os
 import importlib.util
 import tempfile
@@ -5,10 +7,10 @@ from PIL import Image
 
 
 def test_resize_reduces_large_image():
+    """Test that resize_image reduces large images to acceptable dimensions."""
     # Create a large temporary image (2000x1500)
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-    tmp_name = tmp.name
-    tmp.close()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+        tmp_name = tmp.name
 
     try:
         img = Image.new("RGB", (2000, 1500), color=(255, 0, 0))

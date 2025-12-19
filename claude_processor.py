@@ -276,14 +276,16 @@ class ClaudeProcessor:
         except (OSError, ValueError):  # If resizing fails, continue with original image
             logger.debug("Image resize failed, continuing with original file", exc_info=True)
 
-        prompt = """Analyze this image of a blood pressure monitor display. 
-        The numbers on the display appear in dark gray on a light gray background.
-Extract the following values and return them in valid JSON format:
-- systolic: the systolic blood pressure (first number)
-- diastolic: the diastolic blood pressure (second number)
-- pulse: the heart rate/pulse (third number)
+        prompt = """Analyze this blood pressure monitor display image carefully.
+The numbers appear on a digital display in dark text on a light background.
+If the image is compressed or slightly unclear, do your best to read the values accurately.
 
-Return ONLY valid JSON with these fields. Example:
+Extract the following three numeric values:
+- systolic: the systolic blood pressure (top number). The image shows it to the left of the letters "SYS."
+- diastolic: the diastolic blood pressure (bottom number). The image shows it to the left of the letters "DIA."
+- pulse: the heart rate/pulse (third number). The image shows it to the left of the letters "PUL."
+
+Return ONLY valid JSON with these three fields. Example:
 {"systolic": 120, "diastolic": 80, "pulse": 72}
 """
 
@@ -341,7 +343,9 @@ Return ONLY valid JSON with these fields. Example:
 
         width, height = img.size
         max_current = max(width, height)
-        if max_current <= max_dim:
+
+        # Skip resizing for images already smaller than 1500px to preserve detail
+        if max_current <= 1500 or max_current <= max_dim:
             return image_path
 
         ratio = float(max_dim) / float(max_current)
@@ -368,12 +372,13 @@ Return ONLY valid JSON with these fields. Example:
             tmp_name = tmp.name
 
         try:
-            # Save with reasonable quality settings for JPEG
-            save_kwargs: Dict[str, Any] = {"format": fmt}
-            if fmt == "JPEG":
-                save_kwargs["quality"] = 85
-                save_kwargs["optimize"] = True
-            resized.save(tmp_name, **save_kwargs)
+            # Save with quality settings optimized for readability
+            if fmt == "PNG":
+                # PNG is lossless; preserve maximum detail for text readability
+                resized.save(tmp_name, format="PNG")
+            else:
+                # JPEG: use high quality to minimize compression artifacts on text/numbers
+                resized.save(tmp_name, format=fmt, quality=95, optimize=True)
         except OSError:
             # cleanup on failure
             try:
