@@ -219,9 +219,11 @@ class ClaudeProcessor:
         """
 
         try:
+            logger.debug("Encoding image for Claude: %s", image)
             with open(image, "rb") as f:
                 image_bytes = base64.b64encode(f.read()).decode("utf-8")
         except FileNotFoundError as exc:
+            logger.debug("Image file not found when encoding: %s", image)
             raise ValueError(f"Image file not found: {image}") from exc
 
         image_block: Dict[str, Any] = {
@@ -234,9 +236,26 @@ class ClaudeProcessor:
         }
 
         # Add cache control to enable prompt caching on Anthropic's servers
-        # This significantly reduces token usage when the same image is sent multiple times
+        # Only include cache_control if the current conversation doesn't
+        # already contain too many such blocks (Anthropic limits to 4).
         if use_cache:
-            image_block["cache_control"] = {"type": "ephemeral"}
+            # Count existing blocks with cache_control in current messages
+            existing_cache_blocks = 0
+            for m in getattr(self, "messages", []) or []:
+                content = m.get("content") if isinstance(m, dict) else None
+                if isinstance(content, list):
+                    for blk in content:
+                        if isinstance(blk, dict) and "cache_control" in blk:
+                            existing_cache_blocks += 1
+
+            if existing_cache_blocks < 4:
+                image_block["cache_control"] = {"type": "ephemeral"}
+            else:
+                logger.debug(
+                    "Skipping cache_control for image %s; existing cache blocks=%d",
+                    image,
+                    existing_cache_blocks,
+                )
 
         return [
             image_block,
@@ -245,7 +264,7 @@ class ClaudeProcessor:
         ]
 
     def process_bp_image(
-        self, image_path: str, use_cache: bool = True
+        self, image_path: str, use_cache: bool = True, skip_resize: bool = False
     ) -> Dict[str, Any]:
         """Extract blood pressure data from an image of a BP monitor.
 
@@ -269,69 +288,179 @@ class ClaudeProcessor:
         if not os.path.exists(image_path):
             raise ValueError(f"Image file does not exist: {image_path}")
 
-        # Resize image if it's larger than allowed dimensions to reduce upload size
+        # Resize/convert image if requested to reduce upload size and prepare
+        # a negated grayscale image for better OCR. If `skip_resize` is True
+        # the caller has already prepared the image and we should not modify it.
         resized_path = image_path
         try:
-            resized_path = self.resize_image(image_path, max_dim=1000)
+            if not skip_resize:
+                resized_path = self.resize_image(image_path, max_dim=1000)
         except (OSError, ValueError):  # If resizing fails, continue with original image
             logger.debug("Image resize failed, continuing with original file", exc_info=True)
 
         prompt = """Analyze this blood pressure monitor display image carefully.
-The numbers appear on a digital display in dark text on a light background.
-If the image is compressed or slightly unclear, do your best to read the values accurately.
+    The numbers appear on a digital display (light text on a darker background).
+    If the image is compressed or slightly unclear, do your best to read the values accurately.
 
-Extract the following three numeric values:
-- systolic: the systolic blood pressure (top number). The image shows it to the left of the letters "SYS."
-- diastolic: the diastolic blood pressure (bottom number). The image shows it to the left of the letters "DIA."
-- pulse: the heart rate/pulse (third number). The image shows it to the left of the letters "PUL."
+    Extract the following integer values only (no units):
+    - systolic: the systolic blood pressure (top number), usually left of "SYS" or labeled "SYS".
+    - diastolic: the diastolic blood pressure (bottom number), usually left of "DIA" or labeled "DIA".
+    - pulse: the heart rate/pulse, usually near or labeled "PUL".
 
-Return ONLY valid JSON with these three fields. Example:
-{"systolic": 120, "diastolic": 80, "pulse": 72}
-"""
+    Return ONLY a single JSON code block (use ```json ... ```). The JSON must be either the older format:
+    {"systolic": 120, "diastolic": 80, "pulse": 72}
+    or the newer format with a comment and data object and an optional explanation string:
+    {"comment": "Some text", "explanation": "I saw '120' to the left of 'SYS'...", "data": {"systolic": 120, "diastolic": 80, "pulse": 72}}
 
+    Include an `explanation` string (short, human-readable) describing where each value was read from on the image (for example: which characters or labels you saw). If you are unsure of a value, return null for that field.
+
+    If you include any explanation text outside the JSON block, place it after the code block. The application will display that explanation to the user.
+
+    All numeric fields must be integers. Do not include any extra text before the code block. If you cannot read numbers at all, return JSON with all fields set to null and include an explanation.
+    """
+
+        # Use a fresh message list for this request to avoid accumulating
+        # image blocks (and cache_control) across multiple calls.
+        old_messages = list(self.messages)
         try:
+            self.messages = []
             self.add_user_message(
                 self.create_image_message(resized_path, prompt, use_cache=use_cache)
             )
             response = self.chat()
             text_response = self.text_from_message(response)
         finally:
-            # clean up any temporary resized file
+            # restore prior conversation messages
             try:
-                if resized_path != image_path and os.path.exists(resized_path):
+                self.messages = old_messages
+            except Exception:
+                self.messages = []
+            # clean up any temporary resized file we created (but not if the
+            # caller passed in a preprocessed image via `skip_resize`).
+            try:
+                if not skip_resize and resized_path != image_path and os.path.exists(resized_path):
                     os.unlink(resized_path)
             except OSError:
                 logger.debug("Failed to remove temporary resized image %s", resized_path, exc_info=True)
 
-        # Parse JSON from response
+        # Parse JSON from response, with fallback extraction via regex
         try:
             # Try to extract JSON from the response
             # Claude might wrap it in markdown code blocks
+            # Extract the first code block (prefer explicit ```json). Keep any
+            # text outside the code block as a potential human explanation.
+            json_str = None
+            outside_text = ""
             if "```json" in text_response:
-                json_str = text_response.split("```json")[1].split("```")[0].strip()
+                head, tail = text_response.split("```json", 1)
+                if "```" in tail:
+                    json_str, rest = tail.split("```", 1)
+                    outside_text = (head + rest).strip()
+                else:
+                    json_str = tail.strip()
             elif "```" in text_response:
-                json_str = text_response.split("```")[1].split("```")[0].strip()
+                head, tail = text_response.split("```", 1)
+                if "```" in tail:
+                    json_str, rest = tail.split("```", 1)
+                    outside_text = (head + rest).strip()
+                else:
+                    json_str = tail.strip()
             else:
                 json_str = text_response.strip()
 
             data = json.loads(json_str)
 
-            # Validate required fields
-            if not all(k in data for k in ["systolic", "diastolic", "pulse"]):
-                raise ValueError("Missing required fields in JSON response")
+            # Handle new format with "comment" and "data" keys
+            if "data" in data and isinstance(data["data"], dict):
+                bp_values = data["data"]
+                result = {
+                    "systolic": bp_values.get("systolic"),
+                    "diastolic": bp_values.get("diastolic"),
+                    "pulse": bp_values.get("pulse"),
+                }
+                if "comment" in data:
+                    result["comment"] = data["comment"]
+                if "explanation" in data:
+                    result["explanation"] = data["explanation"]
+            else:
+                result = data
 
-            return data
+            # If any required numeric field is missing or not an int/null,
+            # attempt a regex-based extraction from the raw text as a fallback.
+            def _as_int_or_none(v):
+                try:
+                    if v is None:
+                        return None
+                    return int(v)
+                except Exception:
+                    return None
+
+            for k in ["systolic", "diastolic", "pulse"]:
+                result[k] = _as_int_or_none(result.get(k))
+
+            if not all(k in result and (isinstance(result[k], int) or result[k] is None) for k in ["systolic", "diastolic", "pulse"]):
+                # Fallback: try to extract labeled values from the plain text
+                import re
+
+                text = text_response
+                found = {}
+                patterns = {
+                    "systolic": r"SYS[:\s]*([0-9]{2,3})",
+                    "diastolic": r"DIA[:\s]*([0-9]{2,3})",
+                    "pulse": r"PUL[:\s]*([0-9]{2,3})",
+                }
+                for key, pat in patterns.items():
+                    m = re.search(pat, text, re.IGNORECASE)
+                    if m:
+                        found[key] = int(m.group(1))
+
+                # Generic three-number sequence fallback (systolic, diastolic, pulse)
+                if len(found) < 3:
+                    nums = re.findall(r"\b([0-9]{2,3})\b", text)
+                    if len(nums) >= 3:
+                        try:
+                            found.setdefault("systolic", int(nums[0]))
+                            found.setdefault("diastolic", int(nums[1]))
+                            found.setdefault("pulse", int(nums[2]))
+                        except Exception:
+                            pass
+
+                # Merge found values into result when missing
+                for k, v in found.items():
+                    if result.get(k) is None:
+                        result[k] = v
+
+            # If we have any outside-text explanation, set it on the result if
+            # an explicit explanation field wasn't provided.
+            if outside_text and not result.get("explanation"):
+                # Keep outside_text reasonably short
+                result["explanation"] = outside_text[:1000]
+
+            # Final validation: ensure keys exist
+            if not all(k in result for k in ["systolic", "diastolic", "pulse"]):
+                raise ValueError("Missing required fields in JSON response after fallback attempts")
+
+            return result
         except (json.JSONDecodeError, IndexError, KeyError) as e:
             raise ValueError(f"Failed to parse JSON from response: {e}") from e
 
     @staticmethod
     # Tests and usage make this function utility-like; allow a few locals here.
     # pylint: disable=too-many-locals
-    def resize_image(image_path: str, max_dim: int = 1000) -> str:
+    def resize_image(image_path: str, max_dim: int = 1000, negate: bool = True) -> str:
         """Resize an image so its largest dimension is no greater than `max_dim`.
 
-        If the image is already within bounds, returns the original path.
+        If the image is already within bounds, returns the original path (unless
+        negate is True, in which case a processed copy is created).
         Otherwise writes a resized copy to a temporary file and returns its path.
+
+        Args:
+            image_path: Path to the image file to resize.
+            max_dim: Maximum dimension (width or height) for the output image.
+            negate: If True, convert image to grayscale and negate colors.
+
+        Returns:
+            Path to the resized (and optionally negated) image.
         """
         if not os.path.exists(image_path):
             raise ValueError(f"Image file does not exist: {image_path}")
@@ -341,11 +470,41 @@ Return ONLY valid JSON with these three fields. Example:
         except OSError as exc:
             raise ValueError(f"Unable to open image: {image_path}") from exc
 
+        # Convert to grayscale if negate is True
+        if negate:
+            img = img.convert("L")
+
         width, height = img.size
         max_current = max(width, height)
 
         # Skip resizing for images already smaller than 1500px to preserve detail
         if max_current <= 1500 or max_current <= max_dim:
+            # If negate is True but image is already within size bounds,
+            # still need to save the negated version
+            if negate:
+                from PIL import ImageOps
+                img = ImageOps.invert(img)
+                ext = os.path.splitext(image_path)[1].lower()
+                fmt = {
+                    ".jpg": "JPEG",
+                    ".jpeg": "JPEG",
+                    ".png": "PNG",
+                    ".gif": "GIF",
+                }.get(ext, "JPEG")
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                    tmp_name = tmp.name
+                try:
+                    if fmt == "PNG":
+                        img.save(tmp_name, format="PNG")
+                    else:
+                        img.save(tmp_name, format=fmt, quality=95, optimize=True)
+                except OSError:
+                    try:
+                        os.unlink(tmp_name)
+                    except OSError:
+                        pass
+                    raise
+                return tmp_name
             return image_path
 
         ratio = float(max_dim) / float(max_current)
@@ -359,6 +518,11 @@ Return ONLY valid JSON with these three fields. Example:
             resample = getattr(Image, "LANCZOS", getattr(Image, "BICUBIC", 3))
 
         resized = img.resize(new_size, resample)
+
+        # Negate the image if requested
+        if negate:
+            from PIL import ImageOps
+            resized = ImageOps.invert(resized)
 
         ext = os.path.splitext(image_path)[1].lower()
         fmt = {

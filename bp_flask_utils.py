@@ -84,6 +84,13 @@ HTML_PREVIEW_FORM = """
 <div class="container">
   <h2>Preview Extracted Reading</h2>
   <p>Confirm or edit the extracted values before saving.</p>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for message in messages %}
+        <div class="flash-message" style="text-align:center; padding:10px; margin:10px auto; max-width:560px; background:#d4edda; color:#155724; border:1px solid #c3e6cb; border-radius:4px;">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
   <div style="text-align:center;"><img src="data:image/jpeg;base64,{{ image_data }}" alt="Uploaded image"/></div>
   <form method=post action="/add/confirm">
     Systolic: <input type=number name=systolic value="{{ systolic }}" required><br>

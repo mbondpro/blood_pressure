@@ -28,6 +28,9 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from PIL.ExifTags import TAGS
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 from blood_pressure_tracker import BloodPressureTracker
 from claude_processor import ClaudeProcessor
@@ -353,27 +356,34 @@ def add():  # pylint: disable=too-many-branches
             try:
                 image_file.save(tmp_path)
 
-                # Resize uploaded image before submitting to Claude to reduce upload size
+                # Resize uploaded image (and produce negated grayscale)
                 try:
                     resized_tmp = claude_processor.resize_image(tmp_path, max_dim=1000)
                 except Exception:
                     # fallback to original if resizing fails
                     resized_tmp = tmp_path
+                logger.debug("Image upload paths: original=%s, processed=%s", tmp_path, resized_tmp)
 
                 # Extract data from image using Claude (use resized_tmp)
-                bp_data = claude_processor.process_bp_image(resized_tmp)
+                bp_data = claude_processor.process_bp_image(resized_tmp, skip_resize=True)
 
                 systolic = int(bp_data["systolic"])
                 diastolic = int(bp_data["diastolic"])
                 pulse = int(bp_data["pulse"]) if bp_data.get("pulse") else None
 
+                # Display explanation or comment from Claude if present
+                if "explanation" in bp_data:
+                    flash(bp_data["explanation"], "info")
+                elif "comment" in bp_data:
+                    flash(bp_data["comment"], "info")
+
                 # Try to get timestamp from Claude response, then EXIF, then use current time
                 date = bp_data.get("timestamp")
                 if not date:
                     date = extract_image_datetime(tmp_path)
-                # Prepare preview: show the image and prefilled values for confirmation
+                # Prepare preview: show the processed (grayscale/negated) image
                 try:
-                    with open(tmp_path, "rb") as _f:
+                    with open(resized_tmp, "rb") as _f:
                         image_b64 = base64.b64encode(_f.read()).decode("ascii")
                 except OSError:
                     image_b64 = ""
@@ -392,7 +402,8 @@ def add():  # pylint: disable=too-many-branches
                 flash(f"Error processing image: {str(e)}")
                 response = render_template_string(HTML_ADD_FORM)
             finally:
-                # Clean up temporary files
+                # Clean up temporary files (remove original upload and any
+                # resized/processed copy we created)
                 try:
                     if os.path.exists(tmp_path):
                         os.unlink(tmp_path)
