@@ -50,12 +50,14 @@ class BloodPressureTracker:
         Initialize the BloodPressureTracker instance and set up PostgreSQL configuration.
         """
         self.pg_enabled = True
+        # Read PostgreSQL connection parameters from environment when available.
+        # This makes the code work both in docker-compose and in Kubernetes.
         self.pg_config: Dict[str, Any] = {
-            "host": "db",  # Docker service name for PostgreSQL
-            "port": 5432,
-            "database": "bp_tracker",
-            "user": "postgres",
-            "password": os.environ.get("PGPASSWORD"),
+            "host": os.environ.get("PGHOST", os.environ.get("DB_HOST", "bp-postgres")),
+            "port": int(os.environ.get("PGPORT", os.environ.get("DB_PORT", 5432))),
+            "database": os.environ.get("PGDATABASE", os.environ.get("DB_NAME", "bp_tracker")),
+            "user": os.environ.get("PGUSER", os.environ.get("DB_USER", "postgres")),
+            "password": os.environ.get("PGPASSWORD", os.environ.get("DB_PASSWORD")),
         }
         self._create_pg_table()
 
