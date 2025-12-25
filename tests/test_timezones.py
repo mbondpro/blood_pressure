@@ -52,7 +52,7 @@ def test_parse_to_utc_and_add_reading(monkeypatch):
     # Set required env vars before importing modules
     monkeypatch.setenv("TIMEZONE", "America/New_York")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "testkey")
-    monkeypatch.setenv("PGPASSWORD", "REDACTED_PGPASSWORD")
+    monkeypatch.setenv("DB_PASSWORD", "REDACTED_PGPASSWORD")
 
     # Provide a ZoneInfo fallback for environments without tzdata
     def _fake_zoneinfo(key: str):
@@ -130,7 +130,7 @@ def test_parse_to_utc_and_add_reading(monkeypatch):
 def test_get_reading_by_id_converts_to_site_tz(monkeypatch):
     monkeypatch.setenv("TIMEZONE", "America/New_York")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "testkey")
-    monkeypatch.setenv("PGPASSWORD", "REDACTED_PGPASSWORD")
+    monkeypatch.setenv("DB_PASSWORD", "REDACTED_PGPASSWORD")
 
     # Provide ZoneInfo fallback
     def _fake_zoneinfo(key: str):

@@ -197,7 +197,7 @@ def extract_image_datetime(image_path: str) -> str | None:
 
 def get_reading_by_id(reading_id):
     """Retrieve a single reading by its ID from the database."""
-    conn = psycopg2.connect(**tracker.pg_config)
+    conn = psycopg2.connect(**tracker.db_config)
     cur = conn.cursor()
     cur.execute(
         "SELECT id, date, systolic, diastolic, pulse FROM blood_pressure WHERE id = %s",
@@ -248,7 +248,7 @@ def edit_reading(reading_id):
                 # Parse provided date and convert to UTC-aware datetime for storage
                 dt_utc = parse_to_utc(date)
 
-                conn = psycopg2.connect(**tracker.pg_config)
+                conn = psycopg2.connect(**tracker.db_config)
                 cur = conn.cursor()
                 cur.execute(
                     "UPDATE blood_pressure SET date=%s, systolic=%s, diastolic=%s, pulse=%s WHERE id=%s",
@@ -267,7 +267,7 @@ def edit_reading(reading_id):
 @app.route("/delete/<int:reading_id>", methods=["POST"])
 def delete_reading(reading_id):
     """Delete a blood pressure reading by its ID. Accepts POST only for safety."""
-    conn = psycopg2.connect(**tracker.pg_config)
+    conn = psycopg2.connect(**tracker.db_config)
     cur = conn.cursor()
     cur.execute("DELETE FROM blood_pressure WHERE id = %s", (reading_id,))
     conn.commit()
@@ -327,7 +327,7 @@ def index():
     """Display all readings in a table."""
     readings = tracker.get_all_readings()
     # Add id to each reading for edit/delete links
-    conn = psycopg2.connect(**tracker.pg_config)
+    conn = psycopg2.connect(**tracker.db_config)
     cur = conn.cursor()
     cur.execute("SELECT id FROM blood_pressure ORDER BY date DESC")
     ids = [row[0] for row in cur.fetchall()]

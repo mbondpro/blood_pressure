@@ -8,7 +8,6 @@ Includes:
 - Utility function for securely retrieving the PostgreSQL password from Docker secrets or environment variables
 """
 
-# os import removed; prefer reading PGPASSWORD from environment where needed
 
 HTML_ADD_FORM = """
 <!doctype html>

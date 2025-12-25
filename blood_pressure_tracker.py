@@ -50,14 +50,13 @@ class BloodPressureTracker:
         Initialize the BloodPressureTracker instance and set up PostgreSQL configuration.
         """
         self.pg_enabled = True
-        # Read PostgreSQL connection parameters from environment when available.
-        # This makes the code work both in docker-compose and in Kubernetes.
-        self.pg_config: Dict[str, Any] = {
-            "host": os.environ.get("PGHOST", os.environ.get("DB_HOST", "bp-postgres")),
-            "port": int(os.environ.get("PGPORT", os.environ.get("DB_PORT", 5432))),
-            "database": os.environ.get("PGDATABASE", os.environ.get("DB_NAME", "bp_tracker")),
-            "user": os.environ.get("PGUSER", os.environ.get("DB_USER", "postgres")),
-            "password": os.environ.get("PGPASSWORD", os.environ.get("DB_PASSWORD")),
+        # Read database connection parameters from environment using unified DB_* names.
+        self.db_config: Dict[str, Any] = {
+            "host": os.environ.get("DB_HOST", "bp-postgres"),
+            "port": int(os.environ.get("DB_PORT", 5432)),
+            "database": os.environ.get("DB_NAME", "bp_tracker"),
+            "user": os.environ.get("DB_USER", "postgres"),
+            "password": os.environ.get("DB_PASSWORD"),
         }
         self._create_pg_table()
 
@@ -68,7 +67,7 @@ class BloodPressureTracker:
             list: List of readings (dict) loaded from the database.
         """
         try:
-            conn = psycopg2.connect(**self.pg_config)
+            conn = psycopg2.connect(**self.db_config)
             cur = conn.cursor()
             cur.execute(
                 "SELECT date, systolic, diastolic, pulse FROM blood_pressure ORDER BY date DESC"
@@ -164,7 +163,7 @@ class BloodPressureTracker:
         Create the blood_pressure table in PostgreSQL if it does not exist.
         """
         try:
-            conn = psycopg2.connect(**self.pg_config)
+            conn = psycopg2.connect(**self.db_config)
             cur = conn.cursor()
             cur.execute(
                 """
@@ -190,7 +189,7 @@ class BloodPressureTracker:
         Add a new reading to the PostgreSQL database.
         """
         try:
-            conn = psycopg2.connect(**self.pg_config)
+            conn = psycopg2.connect(**self.db_config)
             cur = conn.cursor()
 
             # Parse provided date (if any) and store as UTC-aware timestamp

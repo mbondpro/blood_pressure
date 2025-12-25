@@ -62,7 +62,7 @@ The Flask app provides a web interface for adding, editing, deleting, and import
 #### Running with Docker Compose
 
 1. Ensure Docker and Docker Compose are installed.
-2. Add your database password to the `.env` file as `PGPASSWORD` (example included).
+2. Add your database password to the `.env` file as `DB_PASSWORD` (example included).
 3. Start the services:
 
 ```bash
@@ -87,7 +87,7 @@ All readings are stored in a PostgreSQL database. The table `blood_pressure` wil
 ### PostgreSQL Setup
 
 - The database is configured via Docker Compose and environment variables.
-- The password is provided via the `.env` file using the `PGPASSWORD` variable. The compose files read `.env` (or you can export `PGPASSWORD` in your shell).
+- The password is provided via the `.env` file using the `DB_PASSWORD` variable. The compose files read `.env` (or you can export `DB_PASSWORD` in your shell).
 
 ## Design & Implementation
 
@@ -95,7 +95,7 @@ All readings are stored in a PostgreSQL database. The table `blood_pressure` wil
 - **Image upload & AI-assisted extraction:** The web UI accepts photos of blood-pressure monitor screens. EXIF datetime extraction is attempted and an optional AI-assisted extractor (`ClaudeProcessor`) parses systolic, diastolic, pulse, and a best-guess timestamp. The extraction is shown on a preview page for user confirmation prior to saving.
 - **Prompt caching:** The `ClaudeProcessor` uses Anthropic's prompt caching feature to significantly reduce token usage when processing images. Images sent to Claude include `cache_control` metadata, allowing Claude to cache the image data on their servers and reuse it for subsequent requests, reducing costs for repeated or similar processing.
 - **Storage & schema:** Readings are persisted to PostgreSQL in a `blood_pressure` table using a timestamptz-compatible column. The code uses `psycopg2` and passes tz-aware `datetime` objects to the DB.
-- **Configuration & secrets:** Runtime configuration is read from environment variables (loaded via `python-dotenv` in development). Do not commit real secrets — set `ANTHROPIC_API_KEY`, `PGPASSWORD`, and other keys via your environment or a local `.env` file. Compose files read `PGPASSWORD` from `.env`.
+- **Configuration & secrets:** Runtime configuration is read from environment variables (loaded via `python-dotenv` in development). Do not commit real secrets — set `ANTHROPIC_API_KEY`, `DB_PASSWORD`, and other keys via your environment or a local `.env` file. Compose files read `DB_PASSWORD` from `.env`.
 - **Logging & quality:** The project uses structured `logging` (no ad-hoc prints) and follows linting rules (`pylint`) to maintain code quality.
 - **Testing:** Unit tests use `pytest`. `tests/test_timezones.py` verifies timezone parsing/storage/display behavior and uses lightweight monkeypatches for `psycopg2` and `zoneinfo` where appropriate.
 - **Deployment:** Docker Compose (`docker-compose.yml`, `docker-compose-dev.yml`) is configured to use an `.env` file and environment variables for secrets and configuration.

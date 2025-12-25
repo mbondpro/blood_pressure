@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: bp_tracker
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     env_file:
       - .env
     ports:
@@ -22,11 +22,11 @@ services:
     image: bp-flask-arm64
     container_name: bp_flask_app
     environment:
-      PGHOST: db
-      PGPORT: 5432
-      PGDATABASE: bp_tracker
-      PGUSER: postgres
-      PGPASSWORD: ${PGPASSWORD}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: bp_tracker
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
     env_file:
       - .env
     ports:
